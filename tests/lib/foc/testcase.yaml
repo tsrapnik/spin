@@ -8,6 +8,17 @@ tests:
       - native_sim
     integration_platforms:
       - native_sim
+  pmsm.lib.foc.sanitize:
+    # ASan + UBSan (LSan is part of ASan). The sanitizers need a 64-bit host build.
+    # A finding aborts the run, so the test fails even without twister's --enable-*san flags.
+    platform_allow:
+      - native_sim/native/64
+    integration_platforms:
+      - native_sim/native/64
+    extra_configs:
+      - CONFIG_ASAN=y
+      - CONFIG_ASAN_RECOVER=n
+      - CONFIG_UBSAN=y
   pmsm.lib.foc.build:
     build_only: true
     platform_allow:

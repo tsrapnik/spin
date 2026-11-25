@@ -20,8 +20,12 @@ from `/workdir`. The devcontainer (`.devcontainer/`) sets this up; `post-create.
 `west init -l spin && west update`.
 
 ```sh
-# all tests: native_sim runs them, nucleo_c542rc is build-only (catches ARM warnings)
-west twister -T spin/tests -p native_sim -p nucleo_c542rc -O <outdir>
+# before committing: clang-format, checkpatch, GCC analyzer, all tests (incl. ASan/UBSan)
+LINT_OUT=<outdir> spin/scripts/lint.sh          # --fix reformats; step names run a subset
+
+# all tests: native_sim runs them, native_sim/native/64 runs them under ASan + UBSan,
+# nucleo_c542rc is build-only (catches ARM warnings)
+west twister -T spin/tests -p native_sim -p native_sim/native/64 -p nucleo_c542rc -O <outdir>
 
 # one scenario
 west twister -T spin/tests/lib/foc -p native_sim -s pmsm.lib.foc
@@ -78,5 +82,8 @@ soft-float).
   TI or other vendor motor libraries; avoid vendor-branded observers and single-shunt schemes.
 - Doxygen comments use backslash commands (`\brief`, `\p`, `\param`, `\pre`, `\return`), never `@`.
 - Source files start with `SPDX-License-Identifier: MIT`.
+- Code follows Zephyr style: `zephyr/.clang-format` and `checkpatch.pl` with Zephyr's
+  `.checkpatch.conf` (`scripts/lint.sh` checks both). `lib/` has no Zephyr includes, so no
+  `ARRAY_SIZE` etc. there.
 - Tests: one ztest suite per file in `tests/<area>/src/`; `testcase.yaml` lists tags as YAML lists
   (twister rejects space-separated strings).

@@ -54,8 +54,7 @@ ZTEST(foc_svpwm, test_overmodulation_clamps)
 	float vmax = foc_svpwm_vmax(VBUS, MAX_DUTY);
 
 	for (float th = -FOC_PI_F; th < FOC_PI_F; th += 0.05f) {
-		struct foc_ab v = {.alpha = 3.0f * vmax * cosf(th),
-				   .beta = 3.0f * vmax * sinf(th)};
+		struct foc_ab v = {.alpha = 3.0f * vmax * cosf(th), .beta = 3.0f * vmax * sinf(th)};
 		struct foc_abc d = foc_svpwm(v, VBUS, MAX_DUTY);
 
 		zassert_true(d.a >= 1.0f - MAX_DUTY && d.a <= MAX_DUTY);

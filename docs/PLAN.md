@@ -124,6 +124,8 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 ## Verification
 
 - `west twister -T tests -p native_sim` runs unit + sim + device tests (CI-ready).
+- `scripts/lint.sh`: Zephyr clang-format + checkpatch, GCC `-fanalyzer` on the ARM build, and the
+  tests on `native_sim/native/64` under ASan + UBSan (a finding fails the test).
 - `west build -b nucleo_c542rc samples/motor_basic` builds.
 - On target: shell commands; ISR budget < 50 % of PWM period at 20 kHz.
 
@@ -175,3 +177,12 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 - Per call (instructions, nucleo_c542rc `-Os`): `foc_sincos` 49 (branch-free), `foc_svpwm` 62,
   `foc_pi_step` 29, `foc_limit_circle` 31.
 - CORDIC (present on C5): not used. See FEATURES.md.
+- 2026-11-25: Zephyr's static checks, added as `scripts/lint.sh`. Pitfalls:
+  `ZEPHYR_SCA_VARIANT=gcc` fails on `native_sim` (it reads `GCC_COMPILER_VERSION`, which only the SDK
+  toolchain sets), so it runs on `nucleo_c542rc`. Its 11 findings are all in Zephyr `cbprintf`
+  and the STM32 LL HAL, none in this module. Sanitizers need the 64-bit `native_sim`. Zephyr's
+  `CONFIG_ASAN_RECOVER` defaults to y and UBSan only reports by default, so without twister's
+  `--enable-*san` flags a finding would not fail the test. The `.sanitize` scenario sets
+  `ASAN_RECOVER=n` + `-fno-sanitize-recover=all` (checked with an injected signed overflow).
+  checkpatch must run from `zephyr/` to pick up `.checkpatch.conf` (it ignores the SPDX tag
+  placement). The first run found only an `ARRAY_SIZE` hint and formatting in two test files.

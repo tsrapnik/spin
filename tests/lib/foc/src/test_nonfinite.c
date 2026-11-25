@@ -10,10 +10,10 @@
 #include <zephyr/ztest.h>
 #include <pmsm/foc.h>
 
-static const float bad[] = {NAN, -NAN, INFINITY, -INFINITY, FLT_MAX, -FLT_MAX,
-			    1e30f, -1e30f, 3001.0f, -3001.0f, FLT_MIN, -0.0f};
+static const float bad[] = {NAN,   -NAN,   INFINITY, -INFINITY, FLT_MAX, -FLT_MAX,
+			    1e30f, -1e30f, 3001.0f,  -3001.0f,  FLT_MIN, -0.0f};
 
-#define N_BAD (sizeof(bad) / sizeof(bad[0]))
+#define N_BAD ARRAY_SIZE(bad)
 
 static bool in_range(float x, float lo, float hi)
 {
@@ -60,8 +60,7 @@ ZTEST(foc_nonfinite, test_sincos_bounded)
 	for (float x = -FOC_SINCOS_MAX_ARG; x <= FOC_SINCOS_MAX_ARG; x += 0.0137f) {
 		struct foc_sincos sc = foc_sincos(x);
 
-		zassert_true(fabsf(sc.sin) <= 1.0f && fabsf(sc.cos) <= 1.0f, "x %f",
-			     (double)x);
+		zassert_true(fabsf(sc.sin) <= 1.0f && fabsf(sc.cos) <= 1.0f, "x %f", (double)x);
 	}
 }
 
@@ -69,16 +68,15 @@ ZTEST(foc_nonfinite, test_limit_circle)
 {
 	for (size_t i = 0; i < N_BAD; i++) {
 		for (size_t j = 0; j < N_BAD; j++) {
-			struct foc_dq v = foc_limit_circle(
-				(struct foc_dq){.d = bad[i], .q = bad[j]}, 2.0f);
+			struct foc_dq v =
+				foc_limit_circle((struct foc_dq){.d = bad[i], .q = bad[j]}, 2.0f);
 
 			zassert_true(in_range(v.d, -2.0f, 2.0f));
 			zassert_true(in_range(v.q, -2.0f, 2.0f));
 			zassert_true(v.d * v.d + v.q * v.q <= 4.0f * (1.0f + 1e-6f));
 		}
 		/* Bad vmax: result finite; NaN or negative vmax means 0. */
-		struct foc_dq v = foc_limit_circle((struct foc_dq){.d = 1.0f, .q = 1.0f},
-						   bad[i]);
+		struct foc_dq v = foc_limit_circle((struct foc_dq){.d = 1.0f, .q = 1.0f}, bad[i]);
 
 		zassert_true(isfinite(v.d) && isfinite(v.q), "vmax %e", (double)bad[i]);
 	}
@@ -133,10 +131,10 @@ ZTEST(foc_nonfinite, test_svpwm)
 					struct foc_abc d = foc_svpwm(v, vb[k], md[m]);
 
 					zassert_true(in_range(d.a, 0.0f, 1.0f) &&
-						     in_range(d.b, 0.0f, 1.0f) &&
-						     in_range(d.c, 0.0f, 1.0f),
-						     "v %e %e vbus %e md %e", (double)a,
-						     (double)b, (double)vb[k], (double)md[m]);
+							     in_range(d.b, 0.0f, 1.0f) &&
+							     in_range(d.c, 0.0f, 1.0f),
+						     "v %e %e vbus %e md %e", (double)a, (double)b,
+						     (double)vb[k], (double)md[m]);
 				}
 			}
 		}
@@ -151,8 +149,7 @@ ZTEST(foc_nonfinite, test_svpwm_zero_voltage_cases)
 
 	for (size_t k = 0; k < ARRAY_SIZE(vb); k++) {
 		d = foc_svpwm(v, vb[k], 0.95f);
-		zassert_true(d.a == 0.5f && d.b == 0.5f && d.c == 0.5f, "vbus %e",
-			     (double)vb[k]);
+		zassert_true(d.a == 0.5f && d.b == 0.5f && d.c == 0.5f, "vbus %e", (double)vb[k]);
 	}
 	d = foc_svpwm(v, 24.0f, NAN);
 	zassert_true(d.a == 0.5f && d.b == 0.5f && d.c == 0.5f);
