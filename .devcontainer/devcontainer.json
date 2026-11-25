@@ -28,7 +28,8 @@
         "ms-vscode.cpptools",
         "marus25.cortex-debug",
         "plorefice.devicetree",
-        "trond-snekvik.kconfig-lang"
+        "trond-snekvik.kconfig-lang",
+        "anthropic.claude-code"
       ],
       "settings": {
         "C_Cpp.default.compileCommands": "/workdir/build/compile_commands.json",
