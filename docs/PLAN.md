@@ -45,7 +45,8 @@ release.
 ## Module layout
 
 ```
-west.yml                        # pins zephyr + hal_stm32 + cmsis
+west.yml                        # pins zephyr + hal_stm32 + cmsis_6
+.devcontainer/                  # devcontainer.json, post-create.sh (west init/update)
 zephyr/module.yml  CMakeLists.txt  Kconfig
 include/pmsm/foc.h              # pure-C core API (no Zephyr deps)
 include/pmsm/motor.h            # public device API
@@ -83,7 +84,7 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 
 ### M0 Workspace & skeleton
 - [ ] M0.1 `docs/PLAN.md`, `docs/FEATURES.md`
-- [ ] M0.2 `west.yml` (T2, Zephyr pinned to SHA, allowlist `cmsis_6` + `hal_stm32`); devcontainer with workspace outside the repo
+- [~] M0.2 `west.yml` (T2, Zephyr v4.5.0 pinned to SHA, allowlist `cmsis_6` + `hal_stm32`); devcontainer (`ghcr.io/zephyrproject-rtos/ci:v0.29.4`, workspace volume `/workdir`, repo at `/workdir/spin`) — written, not yet verified in container
 - [ ] M0.3 Verify STM32C5 support upstream (SoC, dtsi, nucleo_c542rc board, HAL2 LL tim/adc)
 - [ ] M0.4 Module skeleton (`module.yml`, Kconfig `CONFIG_PMSM_FOC`, `lib/foc`, `include/pmsm/foc.h`, `tests/lib/foc` with one trivial test); twister on native_sim passes
 

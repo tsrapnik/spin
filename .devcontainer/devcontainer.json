@@ -1,0 +1,42 @@
+{
+  "name": "spin (Zephyr)",
+  // Official Zephyr CI image: Zephyr SDK 1.0.1 (matches Zephyr v4.5.0), west, twister deps.
+  "image": "ghcr.io/zephyrproject-rtos/ci:v0.29.4",
+
+  // T2 west workspace: /workdir is a persistent volume (zephyr + modules),
+  // this repo is bind-mounted into it as /workdir/spin.
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workdir/spin,type=bind",
+  "workspaceFolder": "/workdir",
+  "mounts": [
+    "source=spin-west-workspace,target=/workdir,type=volume",
+    // USB access for ST-LINK flashing/debugging and the VCP (hot-plug safe).
+    "source=/dev,target=/dev,type=bind"
+  ],
+  "runArgs": ["--privileged"],
+
+  "remoteUser": "user",
+  "updateRemoteUserUID": true,
+  "containerEnv": {
+    "ZEPHYR_BASE": "/workdir/zephyr"
+  },
+
+  "postCreateCommand": "bash /workdir/spin/.devcontainer/post-create.sh",
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "marus25.cortex-debug",
+        "plorefice.devicetree",
+        "trond-snekvik.kconfig-lang"
+      ],
+      "settings": {
+        "C_Cpp.default.compileCommands": "/workdir/build/compile_commands.json",
+        "files.watcherExclude": {
+          "/workdir/zephyr/**": true,
+          "/workdir/modules/**": true
+        }
+      }
+    }
+  }
+}

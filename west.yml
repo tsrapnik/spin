@@ -1,0 +1,24 @@
+# T2 west manifest: this repo is the manifest repository.
+# Workspace layout (see .devcontainer/):
+#   /workdir/            <- west workspace (topdir, holds .west/)
+#   /workdir/spin/       <- this repo
+#   /workdir/zephyr/
+#   /workdir/modules/hal/{cmsis_6,stm32}/
+manifest:
+  version: "1.2"
+
+  remotes:
+    - name: zephyrproject-rtos
+      url-base: https://github.com/zephyrproject-rtos
+
+  projects:
+    - name: zephyr
+      remote: zephyrproject-rtos
+      revision: 41d10b59730406bbab4ca9f1fbbe9e96aafb4966 # v4.5.0
+      import:
+        name-allowlist:
+          - cmsis_6
+          - hal_stm32
+
+  self:
+    path: spin
