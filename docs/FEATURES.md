@@ -29,6 +29,10 @@ Candidates that would improve the library. Move an item into `docs/PLAN.md` when
 - 3rd ADC (C5A3) for 3rd-current sum check / offset diagnostics or phase-voltage sampling
 - Further power-stage drivers (other STM32 families, nRF, NXP, …)
 - Fixed-point core for MCUs without FPU
+- CORDIC sin/cos hook (STM32G4/H7/U5/C5). On a float core it saves maybe ~20–30 cycles per call
+  (q1.31 conversion via `vcvt #31`, AHB write/read) against ~50 for `foc_sincos`, i.e. < 1 % of the
+  20 kHz budget. It is also a shared peripheral (ISR-exclusive or locked) and not portable. Worth
+  it for a fixed-point core or an MCU without FPU
 
 ## Tooling
 - Real-time data logging (ring buffer → RTT/shell), scope/tuning host tool

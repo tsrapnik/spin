@@ -1,9 +1,14 @@
+common:
+  tags:
+    - pmsm
+    - foc
 tests:
   pmsm.lib.foc:
-    tags:
-      - pmsm
-      - foc
     platform_allow:
       - native_sim
     integration_platforms:
       - native_sim
+  pmsm.lib.foc.build:
+    build_only: true
+    platform_allow:
+      - nucleo_c542rc

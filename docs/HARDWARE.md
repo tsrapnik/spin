@@ -29,6 +29,7 @@ Alternative control board: NUCLEO-C5A3ZG (Nucleo-144) connected with jumper wire
 | Inductance | **⚠ Unknown**: measure (LCR meter at ~1 kHz, line-to-line / 2) | — |
 | Flux linkage | **⚠ Estimate ≈ 11 mWb** (assuming 1100 rpm is no-load at 24 V with SVPWM): ψ ≈ (24/√3) / (1100·2π/60·11). Measure the back-EMF on a scope by spinning the motor by hand | estimate |
 | Kt | **⚠ Estimate ≈ 0.18–0.2 Nm/A** (1.5·p·ψ) | estimate |
+| Rotor inertia | **⚠ Estimate ≈ 6e-6 kg·m²** (≈ 30 g rotor ring at r ≈ 14 mm). Needed for the speed-PI gains (`inertia-nano-kg-m2`). Measure from a speed step at known iq: J = Kt·iq / (dω/dt) | estimate |
 | Encoder | AS5600, 12-bit absolute, I²C (optional; v1 is sensorless) | DFRobot |
 
 Is it a PMSM? Probably yes. Check by spinning the rotor by hand and scoping one line-to-line voltage: a sinusoid means

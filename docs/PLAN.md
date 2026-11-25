@@ -32,7 +32,7 @@ SVPWM, PI, Luenberger observer + PLL); no code copied from ST MCSDK, TI, or othe
 | Gains | Computed from motor params at init: PI by pole cancellation (Kp = L·ωc, Ki = R·ωc), observer poles and PLL bandwidth as multiples. Bandwidths in DT |
 | Faults v1 | HW break (TIM1 BRK) → PWM off. SW per cycle: over-current, over/under-voltage → PWM off, state = FAULT. Clear via `stop` |
 | API | Zephyr device per motor (`compatible = "pmsm,motor"`) referencing a power-stage node. API: `start`, `stop`, `set_speed`, `get_status` |
-| DT params | Integers with explicit units (`resistance-micro-ohms`, `inductance-nano-henries`, `flux-linkage-micro-webers`, `pole-pairs`, `max-current-milliamps`, bandwidths in Hz…), converted to float once at init |
+| DT params | Integers with explicit units (`resistance-micro-ohms`, `inductance-nano-henries`, `flux-linkage-micro-webers`, `pole-pairs`, `inertia-nano-kg-m2`, `max-current-milliamps`, bandwidths in Hz…), converted to float once at init |
 | Verification | ztest unit tests + closed-loop sim. Sim (M2/M3) = plain C plant + FOC core in a ztest loop, no devices/timers → deterministic. `sim-power-stage` driver only in M4 to test the device layer |
 | Packaging | This repo = Zephyr module + `west.yml` (T2 manifest pinning Zephyr). West workspace lives outside the repo |
 
@@ -48,10 +48,10 @@ release.
 west.yml                        # pins zephyr + hal_stm32 + cmsis_6
 .devcontainer/                  # devcontainer.json, post-create.sh (west init/update)
 zephyr/module.yml  CMakeLists.txt  Kconfig
-include/pmsm/foc.h              # pure-C core API (no Zephyr deps)
+include/pmsm/foc.h              # pure-C core API (no Zephyr deps); tiny transforms inline
 include/pmsm/motor.h            # public device API
 include/pmsm/power_stage.h      # driver class API
-lib/foc/                        # transforms.c svpwm.c pi.c gains.c observer.c pll.c foc.c
+lib/foc/                        # transforms.c (sincos, circle limit) svpwm.c pi.c gains.c observer.c pll.c foc.c
 subsys/motor/                   # motor.c (device, ISR glue, thread, faults), motor_shell.c
 drivers/power_stage/            # power_stage_sim.c, power_stage_stm32_tim.c
 dts/bindings/                   # pmsm,motor.yaml, pmsm,sim-power-stage.yaml, st,stm32-tim-power-stage.yaml
@@ -89,11 +89,11 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 - [x] M0.4 Module skeleton (`module.yml`, Kconfig `CONFIG_PMSM_FOC`, `lib/foc`, `include/pmsm/foc.h`, `tests/lib/foc` with one trivial test); twister on native_sim passes
 
 ### M1 Core math (host)
-- [ ] M1.1 Clarke/Park/inverse Park, fast sin/cos
-- [ ] M1.2 SVPWM (min/max injection), voltage circle limit
-- [ ] M1.3 PI with output limits + anti-windup
-- [ ] M1.4 Gain calculation from motor params
-- [ ] M1.5 ztest vectors for all of the above
+- [x] M1.1 Clarke/Park/inverse Park, fast sin/cos
+- [x] M1.2 SVPWM (min/max injection), voltage circle limit
+- [x] M1.3 PI with output limits + anti-windup
+- [x] M1.4 Gain calculation from motor params
+- [x] M1.5 ztest vectors for all of the above
 
 ### M2 Plant + closed-loop sim (ideal angle)
 - [ ] M2.1 Discrete PMSM model (dq: Rs, Ls, flux, pole pairs, J, B, load torque) + ideal inverter (duty → voltage) with the duty delay
@@ -142,3 +142,36 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
   `FPU` + `FPU_SHARING` when `CPU_HAS_FPU` (ISR and motor thread both use float).
 - Small math helpers are `static inline` in `foc.h`. `fminf`/`fmaxf` compile to VMAXNM/VMINNM
   on FPv5 without `-ffast-math` (checked with the real `nucleo_c542rc` build flags, `-Os`).
+- 2026-11-25 (M1): Core math done. Clarke/Park/inverse Park, `foc_wrap_pi`, `foc_q_limit`,
+  `foc_duty_to_ab` are `static inline`; others are in `lib/foc/*.c`. Vectors are small float structs,
+  passed and returned in s0–s3 under the hard-float ABI.
+- `foc_sincos`: Cody-Waite reduction with pi/2 split into 3 parts (exact for |x| < 3200), then
+  Taylor to r^9 / r^8. Measured max error < 2e-7 on ±20 rad, < 1e-6 up to ±3000 rad.
+  ~60 instructions, no libm calls, no tables.
+- SVPWM: `max_duty` clamps both ends symmetrically; the linear limit is
+  `(2·max_duty − 1)·Vbus/√3`. The top duty only reaches `max_duty` at 30° + k·60° on that circle.
+- Voltage limit: d first. The q-PI limit is `foc_q_limit(vd, vmax)` per cycle, so anti-windup sees
+  the real circle. PI anti-windup: the integrator moves towards a limit only until the output
+  reaches it (`integ ≤ hi − p`), holds if p alone saturates, and is clamped to the current limits
+  (handles a shrinking q limit). The first version held the integrator whenever a step would
+  overshoot the limit, which froze a low-Kp PI below the limit. Caught by an Inf test, now covered
+  by `test_integrator_reaches_limit`.
+- Speed-PI gains need J → new DT param `inertia-nano-kg-m2`. PI zero at wc/4 (~76° PM).
+  FIT1036 rotor J ≈ 6e-6 kg·m² (estimate, **⚠ unverified**).
+- Zephyr builds with `-Wdouble-promotion -Werror`; native_sim uses `-m32 -msse2 -mfpmath=sse`,
+  so there is no x87 excess precision in tests.
+- Twister: `pmsm.lib.foc` runs on native_sim, `pmsm.lib.foc.build` is build-only on nucleo_c542rc.
+  Run both: `west twister -T spin/tests -p native_sim -p nucleo_c542rc`.
+- Non-finite policy (see `foc.h` header comment): functions that keep state, set limits or produce
+  duties always return finite values in range (NaN → neutral value, ±Inf saturates). The linear
+  transforms propagate NaN on purpose; **M3.3 fault checks must be NaN-aware** (`!(x >= min && x <= max)`
+  or `isfinite()`). A plain `x > max` test is false for NaN and would let a broken reading through.
+  Covered by `tests/lib/foc/src/test_nonfinite.c`.
+- Intrinsics (FPv5, checked in the disassembly): VMAXNM/VMINNM (`fmaxf`/`fminf`), VSQRT (`sqrtf`, no
+  errno check because the argument is provably ≥ 0), VRINTA (`roundf`, no `-fno-math-errno`
+  needed), VSEL, VMLA/VMLS (contracted multiply-add). `lroundf` → VCVTA only with `-fno-math-errno`;
+  not needed because `roundf` + cast is just as short. Header helpers are `always_inline`:
+  at `-Os` GCC otherwise calls `foc_clampf` out of line.
+- Per call (instructions, nucleo_c542rc `-Os`): `foc_sincos` 49 (branch-free), `foc_svpwm` 62,
+  `foc_pi_step` 29, `foc_limit_circle` 31.
+- CORDIC (present on C5): not used. See FEATURES.md.
