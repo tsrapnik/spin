@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: MIT
+
+menu "PMSM motor control"
+
+config PMSM_FOC
+	bool "PMSM field-oriented control core"
+	select FPU if CPU_HAS_FPU
+	select FPU_SHARING if CPU_HAS_FPU
+	help
+	  Portable float32 FOC math core (transforms, SVPWM, PI, observer,
+	  PLL). Plain C, no Zephyr dependencies.
+
+	  Enables the hardware FPU where present. FPU sharing is required
+	  because the FOC ISR and the motor thread both use float32.
+
+endmenu

@@ -83,10 +83,10 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 ## Milestones
 
 ### M0 Workspace & skeleton
-- [ ] M0.1 `docs/PLAN.md`, `docs/FEATURES.md`
-- [~] M0.2 `west.yml` (T2, Zephyr v4.5.0 pinned to SHA, allowlist `cmsis_6` + `hal_stm32`); devcontainer (`ghcr.io/zephyrproject-rtos/ci:v0.29.4`, workspace volume `/workdir`, repo at `/workdir/spin`) — written, not yet verified in container
-- [ ] M0.3 Verify STM32C5 support upstream (SoC, dtsi, nucleo_c542rc board, HAL2 LL tim/adc)
-- [ ] M0.4 Module skeleton (`module.yml`, Kconfig `CONFIG_PMSM_FOC`, `lib/foc`, `include/pmsm/foc.h`, `tests/lib/foc` with one trivial test); twister on native_sim passes
+- [x] M0.1 `docs/PLAN.md`, `docs/FEATURES.md`, `docs/HARDWARE.md`
+- [x] M0.2 `west.yml` (T2, Zephyr v4.5.0 pinned to SHA, allowlist `cmsis_6` + `hal_stm32`); devcontainer (`ghcr.io/zephyrproject-rtos/ci:v0.29.4`, workspace volume `/workdir`, repo at `/workdir/spin`)
+- [x] M0.3 Verify STM32C5 support upstream (SoC, dtsi, nucleo_c542rc board, HAL2 LL tim/adc)
+- [x] M0.4 Module skeleton (`module.yml`, Kconfig `CONFIG_PMSM_FOC`, `lib/foc`, `include/pmsm/foc.h`, `tests/lib/foc` with one trivial test); twister on native_sim passes
 
 ### M1 Core math (host)
 - [ ] M1.1 Clarke/Park/inverse Park, fast sin/cos
@@ -126,3 +126,19 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 - `west twister -T tests -p native_sim` runs unit + sim + device tests (CI-ready).
 - `west build -b nucleo_c542rc samples/motor_basic` builds.
 - On target: shell commands; ISR budget < 50 % of PWM period at 20 kHz.
+
+## Insights log
+
+- 2026-11-25 (M0): Devcontainer works: `west list` shows zephyr @ v4.5.0 SHA, `cmsis_6`, `hal_stm32`;
+  SDK 1.0.1 in `/opt/toolchains`. The manifest repo is picked up as a Zephyr module via
+  `zephyr/module.yml` without extra config.
+- STM32C5 upstream in v4.5.0: `soc/st/stm32/stm32c5x`, `dts/arm/st/c5/stm32c542.dtsi` (includes c532),
+  board `nucleo_c542rc` (hello_world builds: 16 KB flash). TIM1/ADC1 nodes exist (ADC compatible
+  `st,stm32n6-adc`). `hal_stm32` ships STM32CubeC5 2.1.0 LL with `LL_ADC_INJ_*` (JSQR), TIM break,
+  TRGO2, dead-time. Board yaml lists no `adc`/`pwm` support — irrelevant, we use our own driver.
+- Twister rejects space-separated `tags`; use YAML lists.
+- Run tests: `west twister -T spin/tests -p native_sim` from `/workdir`.
+- Zephyr leaves the FPU off by default (hello_world: soft-float). `CONFIG_PMSM_FOC` now selects
+  `FPU` + `FPU_SHARING` when `CPU_HAS_FPU` (ISR and motor thread both use float).
+- Small math helpers are `static inline` in `foc.h`. `fminf`/`fmaxf` compile to VMAXNM/VMINNM
+  on FPv5 without `-ffast-math` (checked with the real `nucleo_c542rc` build flags, `-Os`).

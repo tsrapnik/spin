@@ -1,0 +1,9 @@
+tests:
+  pmsm.lib.foc:
+    tags:
+      - pmsm
+      - foc
+    platform_allow:
+      - native_sim
+    integration_platforms:
+      - native_sim
