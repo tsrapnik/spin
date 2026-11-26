@@ -446,4 +446,168 @@ ZTEST(foc_nonfinite, test_current_step_all_bad)
 	}
 }
 
+static bool ab_in(struct foc_ab x, float lim)
+{
+	return in_range(x.alpha, -lim, lim) && in_range(x.beta, -lim, lim);
+}
+
+static bool obs_ok(const struct foc_obs *o)
+{
+	return ab_in(o->i, o->i_lim) && ab_in(o->e, o->v_lim) && ab_in(o->err, 2.0f * o->i_lim) &&
+	       isfinite(o->a) && isfinite(o->b) && isfinite(o->g_i) && isfinite(o->g_e) &&
+	       isfinite(o->ts_half);
+}
+
+/* Each init argument bad in turn: either a valid observer or an inert one. */
+ZTEST(foc_nonfinite, test_obs_init)
+{
+	const float good[] = {3.6f, 1.5e-3f, 50e-6f, 2000.0f, 6.0f, 48.0f};
+
+	for (size_t i = 0; i < N_BAD; i++) {
+		for (size_t k = 0; k <= ARRAY_SIZE(good); k++) {
+			float a[ARRAY_SIZE(good)];
+			struct foc_obs o;
+
+			for (size_t n = 0; n < ARRAY_SIZE(good); n++) {
+				a[n] = (n == k || k == ARRAY_SIZE(good)) ? bad[i] : good[n];
+			}
+			foc_obs_init(&o, a[0], a[1], a[2], a[3], a[4], a[5]);
+			zassert_true(obs_ok(&o), "x %e arg %zu", (double)bad[i], k);
+			for (int n = 0; n < 3; n++) {
+				struct foc_ab e = foc_obs_step(&o, (struct foc_ab){1.0f, -1.0f},
+							       (struct foc_ab){5.0f, 2.0f}, 500.0f);
+
+				zassert_true(ab_in(e, FLT_MAX) && obs_ok(&o), "x %e arg %zu",
+					     (double)bad[i], k);
+			}
+		}
+	}
+	/* Inert observer: estimates stay 0. */
+	struct foc_obs o;
+
+	foc_obs_init(&o, 3.6f, 0.0f, 50e-6f, 2000.0f, 6.0f, 48.0f);
+	struct foc_ab e =
+		foc_obs_step(&o, (struct foc_ab){1.0f, 1.0f}, (struct foc_ab){5.0f, 0.0f}, 100.0f);
+
+	zassert_true(e.alpha == 0.0f && e.beta == 0.0f && o.i.alpha == 0.0f);
+}
+
+/* Each step input bad in turn, then all at once; state stays in its limits. */
+ZTEST(foc_nonfinite, test_obs_step)
+{
+	struct foc_obs o;
+
+	for (size_t i = 0; i < N_BAD; i++) {
+		float x = bad[i];
+		struct {
+			struct foc_ab i, v;
+			float w;
+		} cases[] = {
+			{{x, 0.5f}, {5.0f, 2.0f}, 500.0f}, {{0.5f, x}, {5.0f, 2.0f}, 500.0f},
+			{{1.0f, 0.5f}, {x, 2.0f}, 500.0f}, {{1.0f, 0.5f}, {5.0f, x}, 500.0f},
+			{{1.0f, 0.5f}, {5.0f, 2.0f}, x},   {{x, x}, {x, x}, x},
+		};
+
+		for (size_t k = 0; k < ARRAY_SIZE(cases); k++) {
+			foc_obs_init(&o, 3.6f, 1.5e-3f, 50e-6f, 2000.0f, 6.0f, 48.0f);
+			for (int n = 0; n < 5; n++) {
+				(void)foc_obs_step(&o, cases[k].i, cases[k].v, cases[k].w);
+				zassert_true(obs_ok(&o), "x %e case %zu", (double)x, k);
+			}
+		}
+		for (size_t j = 0; j < N_BAD; j++) {
+			float y = bad[j];
+
+			(void)foc_obs_step(&o, (struct foc_ab){x, y}, (struct foc_ab){y, x}, y);
+			zassert_true(obs_ok(&o), "x %e y %e", (double)x, (double)y);
+		}
+	}
+}
+
+static bool pll_ok(const struct foc_pll *p)
+{
+	return in_range(p->theta, -FOC_PI_F, FOC_PI_F) && in_range(p->omega, -p->w_max, p->w_max) &&
+	       in_range(p->err, -1.0f, 1.0f) && isfinite(p->f_err) && isfinite(p->pi.integ) &&
+	       isfinite(p->e_prev.d) && isfinite(p->e_prev.q);
+}
+
+ZTEST(foc_nonfinite, test_pll_gains_init_reset)
+{
+	for (size_t i = 0; i < N_BAD; i++) {
+		struct foc_pi_gains g = foc_gains_pll(bad[i]);
+		struct foc_pll p;
+
+		zassert_true(in_range(g.kp, 0.0f, FLT_MAX) && in_range(g.ki, 0.0f, FLT_MAX));
+
+		const struct {
+			struct foc_pi_gains g;
+			float ts, w_max, e_min;
+		} cases[] = {
+			{{bad[i], bad[i]}, 50e-6f, 3000.0f, 0.1f},
+			{foc_gains_pll(150.0f), bad[i], 3000.0f, 0.1f},
+			{foc_gains_pll(150.0f), 50e-6f, bad[i], 0.1f},
+			{foc_gains_pll(150.0f), 50e-6f, 3000.0f, bad[i]},
+			{{bad[i], bad[i]}, bad[i], bad[i], bad[i]},
+		};
+
+		for (size_t k = 0; k < ARRAY_SIZE(cases); k++) {
+			foc_pll_init(&p, cases[k].g, cases[k].ts, cases[k].w_max, cases[k].e_min);
+			zassert_true(in_range(p.ts, 0.0f, FLT_MAX) &&
+					     in_range(p.w_max, 0.0f, FLT_MAX) &&
+					     in_range(p.e_min, FLT_MIN, FLT_MAX) &&
+					     in_range(p.k_f_ts, 0.0f, FLT_MAX) &&
+					     in_range(p.inv_ts, 0.0f, FLT_MAX),
+				     "x %e case %zu", (double)bad[i], k);
+			for (int n = 0; n < 3; n++) {
+				foc_pll_step(&p, (struct foc_ab){-1.0f, 5.0f});
+				zassert_true(pll_ok(&p), "x %e case %zu", (double)bad[i], k);
+			}
+			foc_pll_reset(&p, bad[i], bad[i]);
+			zassert_true(pll_ok(&p), "x %e case %zu", (double)bad[i], k);
+			foc_pll_step(&p, (struct foc_ab){-1.0f, 5.0f});
+			zassert_true(pll_ok(&p), "x %e case %zu", (double)bad[i], k);
+		}
+	}
+}
+
+ZTEST(foc_nonfinite, test_pll_step)
+{
+	const float gains[] = {1.0f, FLT_MAX};
+	struct foc_pll p;
+
+	for (size_t gi = 0; gi < ARRAY_SIZE(gains); gi++) {
+		for (size_t i = 0; i < N_BAD; i++) {
+			foc_pll_init(&p, (struct foc_pi_gains){gains[gi], gains[gi]}, 50e-6f,
+				     3000.0f, 0.1f);
+			foc_pll_reset(&p, 0.5f, 300.0f);
+			for (size_t j = 0; j < N_BAD; j++) {
+				const struct foc_ab e[] = {
+					{bad[i], 1.0f}, {1.0f, bad[i]}, {bad[i], bad[j]}};
+
+				for (size_t k = 0; k < ARRAY_SIZE(e); k++) {
+					foc_pll_step(&p, e[k]);
+					zassert_true(pll_ok(&p), "x %e y %e k %zu", (double)bad[i],
+						     (double)bad[j], k);
+				}
+			}
+		}
+	}
+	/* A NaN EMF is no error: the speed coasts. */
+	foc_pll_init(&p, foc_gains_pll(150.0f), 50e-6f, 3000.0f, 0.1f);
+	foc_pll_reset(&p, 0.5f, 300.0f);
+	foc_pll_step(&p, (struct foc_ab){NAN, NAN});
+	zassert_equal(p.err, 0.0f);
+	zassert_equal(p.omega, 300.0f);
+}
+
+ZTEST(foc_nonfinite, test_duty_hist_init)
+{
+	struct foc_duty_hist h;
+
+	foc_duty_hist_init(&h, UINT_MAX);
+	zassert_equal(h.delay, FOC_DUTY_DELAY_MAX);
+	foc_duty_hist_push(&h, (struct foc_abc){0.1f, 0.2f, 0.3f});
+	zassert_equal(foc_duty_hist_applied(&h).a, 0.5f);
+}
+
 ZTEST_SUITE(foc_nonfinite, NULL, NULL, NULL, NULL, NULL);

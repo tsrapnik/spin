@@ -4,7 +4,8 @@ Candidates that would improve the library. Move an item into `docs/PLAN.md` when
 
 ## Deferred from v1 scope
 - Auto-restart after fault (configurable retries/back-off)
-- Stall / observer-loss detection
+- Stall / observer-loss detection (inputs exist: `foc_pll.err`, `foc_pll.f_err`, `|ê|` vs ψ·ω̂)
+- Sensorless reversal through zero speed (v1: the observer is unreliable near standstill; stop and restart instead)
 - Smooth angle-error blend from forced angle to observer (v1: hard switch)
 - Runtime parameter override (API + shell `motor params`)
 - Gain/parameter persistence via Zephyr settings

@@ -7,4 +7,6 @@ zephyr_library_sources(
   pi.c
   gains.c
   foc.c
+  observer.c
+  pll.c
 )

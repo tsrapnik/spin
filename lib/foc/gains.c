@@ -40,3 +40,13 @@ struct foc_pi_gains foc_gains_speed(float j, float kt, float bw_hz)
 	kp = j * wc / kt;
 	return checked(kp, kp * wc / FOC_SPEED_PI_ZERO_RATIO);
 }
+
+struct foc_pi_gains foc_gains_pll(float bw_hz)
+{
+	float wn = FOC_2PI_F * bw_hz;
+
+	if (!nonneg_finite(bw_hz)) {
+		return (struct foc_pi_gains){0};
+	}
+	return checked(2.0f * wn, wn * wn);
+}

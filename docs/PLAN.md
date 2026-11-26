@@ -28,7 +28,7 @@ SVPWM, PI, Luenberger observer + PLL); no code copied from ST MCSDK, TI, or othe
 | Thread context | Dedicated motor thread at 1 kHz (not the system work queue): speed PI, reference ramps, state transitions, fault handling/reporting |
 | ISR ↔ thread data | Two structs, each single-writer: `cmd` (thread → ISR: state, id/iq refs, forced-angle speed) and `status` (ISR → thread). Exchanged via double buffer + atomic index; no locks in ISR |
 | Startup | Align → I/f ramp (current loop closed, forced angle) → hard switch to observer at fixed handover speed, speed-PI integrator preloaded with the I/f current → closed loop |
-| Observer | Luenberger on αβ current model; back-EMF states with rotating model (de/dt = ω·J·e, ω from PLL). Angle + speed from PLL |
+| Observer | Luenberger on αβ current model; back-EMF states with rotating model (de/dt = ω·J·e, ω from PLL). Angle + speed from a normalised PLL with a frequency aid (see insights M3.1) |
 | Gains | Computed from motor params at init: PI by pole cancellation (Kp = L·ωc, Ki = R·ωc), observer poles and PLL bandwidth as multiples. Bandwidths in DT |
 | Faults v1 | HW break (TIM1 BRK) → PWM off. SW per cycle: over-current, over/under-voltage → PWM off, state = FAULT. Clear via `stop` |
 | API | Zephyr device per motor (`compatible = "pmsm,motor"`) referencing a power-stage node. API: `start`, `stop`, `set_speed`, `get_status` |
@@ -51,7 +51,7 @@ zephyr/module.yml  CMakeLists.txt  Kconfig
 include/pmsm/foc.h              # pure-C core API (no Zephyr deps); tiny transforms inline
 include/pmsm/motor.h            # public device API
 include/pmsm/power_stage.h      # driver class API
-lib/foc/                        # transforms.c (sincos, circle limit) svpwm.c pi.c gains.c foc.c (current loop) observer.c pll.c
+lib/foc/                        # transforms.c (sincos, circle limit) svpwm.c pi.c gains.c foc.c (current loop) observer.c (+ duty history) pll.c
 subsys/motor/                   # motor.c (device, ISR glue, thread, faults), motor_shell.c
 drivers/power_stage/            # power_stage_sim.c, power_stage_stm32_tim.c
 dts/bindings/                   # pmsm,motor.yaml, pmsm,sim-power-stage.yaml, st,stm32-tim-power-stage.yaml
@@ -100,7 +100,7 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 - [x] M2.2 FOC current loop + speed loop with true angle; CI tests: current step response, speed step
 
 ### M3 Sensorless
-- [ ] M3.1 Luenberger observer (rotating EMF) + PLL; test against plant angle at constant speed
+- [x] M3.1 Luenberger observer (rotating EMF) + PLL; test against plant angle at constant speed
 - [ ] M3.2 Startup state machine (align → I/f → handover → closed loop), ISR/thread split as decided
 - [ ] M3.3 Per-cycle faults (OC, OV, UV)
 - [ ] M3.4 Sim scenarios in CI: start-up, speed steps, load step
@@ -232,3 +232,37 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
   linear transforms; `foc_torque_constant` → `foc_gains_speed`; PI with FLT_MAX gains and limits;
   `foc_current_init` with bad gains/ts/max_duty/t_adv; `foc_current_step` with all inputs bad at once.
   Known, documented: θ beyond `FOC_SINCOS_MAX_ARG` counts as 0, so callers must pass a wrapped angle.
+- 2026-11-26 (M3.1): `foc_obs` (`lib/foc/observer.c`): exact ZOH discretisation of the αβ RL model
+  (a = e^(−R·Ts/L), b = (1 − a)/R via `expm1f`, so it stays accurate for small R·Ts/L and R = 0). The EMF
+  is taken at mid-period (half rotation applied twice, so one `foc_sincos`). Predict, then correct with
+  r = i − î⁻. Gains in closed form put a double pole at z = e^(−2π·bw·Ts): g_i = 1 − z²/a,
+  g_e = (1 − z)²/b. Bad parameters give an inert observer (ê = 0). State is clamped to `i_lim`/`v_lim`.
+  `foc_duty_hist` (delay 0..2) pairs each sample with the duty applied in the period before it, i.e. the
+  duty written `delay + 1` cycles earlier; the sim checks it against `plant.applied` every cycle.
+- `foc_pll` (`lib/foc/pll.c`): ε = −e_d·sign/max(|ê|, e_min), critically damped PI
+  (`foc_gains_pll`: Kp = 2ω_n, Ki = ω_n²), angle advanced by ω̂·Ts before each step. Two pitfalls found
+  in the sim:
+  1. Taking the sign from ω̂ (the PI output) gave a period-2 limit cycle when Kp·ε > |integrator|:
+     ω̂ alternated +836/−1933 rad/s with the true speed at −550. The sign now comes from the integrator.
+  2. A phase detector alone pulls in slowly: wrong-sign preloads took up to 9000 cycles. A frequency aid
+     fixes this. It adds k_f·Ts·(ê_dq,prev × ê_dq)/(|ê|²·Ts) to the integrator, with k_f = Kp/4. That is the
+     rotation residual in the PLL frame (≈ ω − ω̂) and does not depend on the angle error. The first
+     version used the αβ rotation sin(Δφ)/Ts. It was biased by (ωTs)²/6 (3.8e-4 rad error at
+     1200 rad/s) and pulled ω̂ to 0 without EMF. Measuring in the PLL frame fixes both. Lock now takes
+     < 400 cycles from any preload above ≈ 100 rad/s electrical. At 30 rad/s electrical
+     (|ê| = 0.33 V), a wrong-sign preload can still fail to lock, so M3.2 must preload from the forced angle.
+- Sim results (defaults: observer 2 kHz, PLL 150 Hz, e_min 0.1 V; all from zero state at standstill,
+  acquired during the speed-up on the true angle). Steady state at 5..90 rad/s, either direction, 0 or
+  0.05 Nm: angle error < 0.3 mrad, speed error < 2e-4 rad/s, |ê| within 1e-3 of p·ψ·ω. Rs ±30 %:
+  no angle error (acts along q at i_d = 0), |ê| off by 5 %. Ls ±30 %: 11 mrad. Duty delay assumed ±1
+  period: 32 mrad, 100× the matched error. The prediction error does **not** reveal a wrong delay at
+  constant speed (the EMF estimate absorbs the error); the angle against the plant does. On the
+  hardware (M5.2) check the delay on the scope, not via the observer residual.
+- Sensorless closed loop after a switch from the true angle at 50 rad/s: 0.05 Nm load step costs
+  ≤ 45 mrad of angle error during the dip, a 50 → 80 rad/s step ≤ 60 mrad; steady state back to < 1 mrad.
+  The PLL angle lag under acceleration matches asin(α/ω_n²) (5 %, unit test).
+- Cost on nucleo_c542rc `-Os`: `foc_obs_step` 137 instructions + 1 `foc_sincos`,
+  `foc_pll_step` 119 + `foc_sincos` + `foc_pi_step` (now one VDIV, one VSQRT). Observer + PLL add
+  ≈ 400 instructions per cycle; the whole per-cycle FOC path is ≈ 700.
+- Host `math.h` declares `finite()`; don't name static helpers after libm functions (broke a host
+  build of `lib/foc`).

@@ -18,9 +18,10 @@
  * - Functions that keep state, set limits or produce duties never return
  *   NaN or Inf: foc_wrap_pi(), foc_sincos(), foc_limit_circle(),
  *   foc_q_limit(), foc_svpwm_vmax(), foc_svpwm(), foc_pi_init(),
- *   foc_pi_step(), the gain functions, foc_current_init() and
- *   foc_current_step(). Inputs that are NaN map to the neutral value (0, or
- *   zero voltage), +-Inf saturates. See each function.
+ *   foc_pi_step(), the gain functions, foc_current_init(),
+ *   foc_current_step(), the duty history, the observer and the PLL.
+ *   Inputs that are NaN map to the neutral value (0, or zero voltage),
+ *   +-Inf saturates. See each function.
  * - foc_torque_constant() is a plain product and propagates NaN;
  *   foc_gains_speed() rejects a non-finite or non-positive Kt.
  * - The linear transforms (Clarke, Park, their inverses, foc_duty_to_ab())
@@ -410,6 +411,218 @@ FOC_INLINE void foc_current_reset(struct foc_current *c)
  */
 struct foc_abc foc_current_step(struct foc_current *c, struct foc_abc i_abc, float vbus,
 				float theta, float omega, struct foc_dq ref);
+
+/** \brief Longest duty-to-sample delay foc_duty_hist supports, in PWM periods. */
+#define FOC_DUTY_DELAY_MAX 2U
+
+/**
+ * \brief History of written duties, to pair each sample with the duty that
+ *        was applied during the PWM period before it.
+ *
+ * A duty written in cycle k is applied \p delay periods later (1 on the
+ * hardware: latched at the next update event). The period that ends at
+ * sample k therefore ran on the duty written in cycle k - 1 - delay.
+ *
+ * Per cycle: foc_duty_hist_applied() before the observer step, then
+ * foc_duty_hist_push() with the new duty.
+ */
+struct foc_duty_hist {
+	struct foc_abc d[FOC_DUTY_DELAY_MAX + 1U]; /**< d[0] is the oldest. */
+	unsigned int delay;                        /**< d[0..delay] are in use. */
+};
+
+/**
+ * \brief Set the delay and fill the history with 0.5 (zero voltage).
+ *
+ * \p delay above #FOC_DUTY_DELAY_MAX is clamped.
+ */
+void foc_duty_hist_init(struct foc_duty_hist *h, unsigned int delay);
+
+/** \brief Duty applied during the PWM period that ended at the latest sample. */
+FOC_INLINE struct foc_abc foc_duty_hist_applied(const struct foc_duty_hist *h)
+{
+	return h->d[0];
+}
+
+/** \brief Record the duty written in this cycle. */
+FOC_INLINE void foc_duty_hist_push(struct foc_duty_hist *h, struct foc_abc duty)
+{
+	/* Clamped again so the index is provably in range. */
+	unsigned int last = (h->delay < FOC_DUTY_DELAY_MAX) ? h->delay : FOC_DUTY_DELAY_MAX;
+
+	/* Shift the whole array (fixed bound); entries above last are unused. */
+	for (unsigned int k = 0U; k < FOC_DUTY_DELAY_MAX; k++) {
+		h->d[k] = h->d[k + 1U];
+	}
+	h->d[last] = duty;
+}
+
+/**
+ * \brief Luenberger observer for current and back-EMF in the alpha/beta frame.
+ *
+ * Model over one PWM period (voltage v constant in the stationary frame,
+ * back-EMF e rotating at the electrical speed omega):
+ *
+ *   i[k] = a i[k-1] + b (v - e_mid),   a = exp(-R ts / L), b = (1 - a) / R
+ *   e[k] = Rot(omega ts) e[k-1],       e_mid = Rot(omega ts / 2) e[k-1]
+ *
+ * This is the exact zero-order-hold solution of L di/dt = v - R i - e with
+ * the back-EMF taken at mid-period. Each step predicts with the model and
+ * corrects with the prediction error r = i - i_pred:
+ *
+ *   i_hat = i_pred + g_i r,   e_hat = e_pred - g_e r
+ *
+ * With omega = 0 the error dynamics have the characteristic polynomial
+ * z^2 - ((1 - g_i) a + 1 - g_e b) z + (1 - g_i) a; foc_obs_init() places
+ * both roots at z = exp(-2 pi bw ts). The rotating EMF model removes the
+ * steady-state angle lag at constant speed when omega is right.
+ *
+ * For a surface PMSM e = omega psi (-sin(theta), cos(theta)), so the PLL
+ * (foc_pll) gets the angle from e_hat.
+ *
+ * All state stays finite and within the limits given to foc_obs_init().
+ */
+struct foc_obs {
+	float a;           /**< Current-model pole exp(-R ts / L). */
+	float b;           /**< Voltage-to-current gain (1 - a) / R, A/V. */
+	float g_i;         /**< Current correction gain. */
+	float g_e;         /**< Back-EMF correction gain, V/A. */
+	float ts_half;     /**< Half the sample period, s. */
+	float i_lim;       /**< Clamp for the estimated current, A. */
+	float v_lim;       /**< Clamp for the voltage input and the EMF, V. */
+	struct foc_ab i;   /**< Estimated current at the latest sample, A. */
+	struct foc_ab e;   /**< Estimated back-EMF at the latest sample, V. */
+	struct foc_ab err; /**< Prediction error i - i_pred of the latest step, A. */
+};
+
+/**
+ * \brief Compute the model and gains from motor parameters; clear the state.
+ *
+ * Keep \p bw_hz well above R / (2 pi L) and the electrical frequency at
+ * top speed, and well below 1 / (2 pi ts).
+ *
+ * \param rs Phase resistance in ohm (0 allowed).
+ * \param ls Phase inductance in henry.
+ * \param ts Sample period in seconds.
+ * \param bw_hz Error-dynamics bandwidth (double pole) in Hz.
+ * \param i_lim Current clamp, A; a few times the largest phase current.
+ * \param v_lim Voltage clamp, V; at least the bus voltage.
+ *
+ * If an input is negative, zero where it must be positive, not finite, or
+ * makes a coefficient non-finite, the observer is inert: all coefficients
+ * are 0 and the estimates stay 0.
+ */
+void foc_obs_init(struct foc_obs *o, float rs, float ls, float ts, float bw_hz, float i_lim,
+		  float v_lim);
+
+/** \brief Clear the estimates, e.g. when the PWM is switched off. */
+FOC_INLINE void foc_obs_reset(struct foc_obs *o)
+{
+	o->i = (struct foc_ab){0};
+	o->e = (struct foc_ab){0};
+	o->err = (struct foc_ab){0};
+}
+
+/**
+ * \brief Run one observer step.
+ *
+ * A NaN current component counts as zero prediction error (the estimate
+ * coasts on the model); the error is clamped to +-2 i_lim. NaN voltage
+ * components count as 0, +-Inf saturates at v_lim. A NaN speed counts as
+ * 0; the rotation per step is clamped to +-pi.
+ *
+ * \param i Measured current at this sample, see foc_clarke().
+ * \param v Voltage applied during the period that ended at this sample,
+ *        see foc_duty_hist_applied() and foc_duty_to_ab().
+ * \param omega Electrical speed estimate, rad/s (usually foc_pll.omega).
+ * \return Estimated back-EMF at this sample, always finite.
+ */
+struct foc_ab foc_obs_step(struct foc_obs *o, struct foc_ab i, struct foc_ab v, float omega);
+
+/**
+ * \brief Phase-locked loop that extracts angle and speed from the back-EMF.
+ *
+ * Per step the angle is advanced by omega * ts to the new sample, then the
+ * EMF is turned into the rotor frame at that angle. For a surface PMSM
+ * e_d = -|e| sin(theta - theta_hat) * sign(omega), so the angle error is
+ *
+ *   err = -e_d * sign(omega_hat) / max(|e|, e_min)  ~  sin(theta - theta_hat)
+ *
+ * normalised so the loop gain does not depend on speed. A PI turns it into
+ * the speed estimate. Lock at theta_hat = theta + pi is unstable as long as
+ * the sign of omega_hat is right.
+ *
+ * A phase detector alone can stay out of lock when omega_hat starts far
+ * from omega (e.g. with the wrong sign), because the error then averages
+ * to almost zero. A frequency detector aids it: with e_dq the EMF in the
+ * frame of theta_hat, whose rotation per step is omega_hat ts,
+ *
+ *   f_err = (e_dq_prev x e_dq) / (max(|e|, e_min)^2 ts)
+ *         ~ sin((omega - omega_hat) ts) / ts
+ *
+ * is the speed error whatever the angle error. It is added to the
+ * integrator with the gain k_f = #FOC_PLL_FLL_RATIO * Kp. It is zero at
+ * constant speed in lock (no bias), and falls off with |e|^2 below e_min
+ * (no pull towards 0 without EMF). Below
+ * |e| = e_min the gain falls off with |e|, which keeps noise at standstill
+ * from driving the estimate.
+ */
+struct foc_pll {
+	struct foc_pi pi;     /**< Angle error (rad) to electrical speed (rad/s). */
+	float ts;             /**< Sample period, s. */
+	float w_max;          /**< Speed estimate limit, rad/s electrical. */
+	float e_min;          /**< EMF magnitude below which the gain is reduced, V. */
+	float theta;          /**< Angle estimate at the latest sample, wrapped. */
+	float omega;          /**< Speed estimate, rad/s electrical. */
+	float err;            /**< Normalised angle error of the latest step, [-1, 1]. */
+	float f_err;          /**< Speed error seen by the frequency aid, rad/s. */
+	float k_f_ts;         /**< Frequency-aid gain times ts. */
+	float inv_ts;         /**< 1 / ts, 1/s. */
+	struct foc_dq e_prev; /**< EMF of the previous step, in its PLL frame. */
+};
+
+/** \brief Frequency-aid gain of the PLL relative to its Kp. */
+#define FOC_PLL_FLL_RATIO 0.25f
+
+/**
+ * \brief PLL gains for a critically damped loop: Kp = 2 wn, Ki = wn^2.
+ *
+ * Closed loop (Kp s + Ki) / (s^2 + Kp s + Ki) with natural frequency
+ * wn = 2 pi \p bw_hz. Steady-state angle error under a constant electrical
+ * acceleration alpha is alpha / wn^2. Keep \p bw_hz well below the
+ * observer bandwidth.
+ *
+ * \return Gains; both 0 if \p bw_hz is negative or not finite, or a result
+ *         overflows.
+ */
+struct foc_pi_gains foc_gains_pll(float bw_hz);
+
+/**
+ * \brief Set gains and limits; angle, speed and integrator start at 0.
+ *
+ * A \p ts, \p w_max or \p e_min that is negative or not finite is replaced
+ * by 0 (gains as in foc_pi_init()).
+ *
+ * \param w_max Speed estimate limit, rad/s electrical.
+ * \param e_min EMF magnitude in volts below which the loop gain falls off.
+ */
+void foc_pll_init(struct foc_pll *p, struct foc_pi_gains g, float ts, float w_max, float e_min);
+
+/**
+ * \brief Preload angle and speed, e.g. from the forced angle at startup.
+ *
+ * \p theta is wrapped (NaN gives 0) and \p omega clamped to +-w_max (NaN
+ * gives 0); the integrator takes \p omega.
+ */
+void foc_pll_reset(struct foc_pll *p, float theta, float omega);
+
+/**
+ * \brief Run one PLL step on the back-EMF estimate of this sample.
+ *
+ * Updates theta, omega and err; all stay finite. A non-finite \p e counts
+ * as zero angle error (the estimate coasts at the last speed).
+ */
+void foc_pll_step(struct foc_pll *p, struct foc_ab e);
 
 #ifdef __cplusplus
 }
