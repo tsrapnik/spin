@@ -27,10 +27,10 @@ SVPWM, PI, Luenberger observer + PLL); no code copied from ST MCSDK, TI, or othe
 | ISR context | FOC in ADC-EOC ISR (`IRQ_DIRECT_CONNECT` in the driver, callback into motor), no kernel calls. ISR owns everything per-cycle: sampling, forced-angle integration, observer + PLL, angle select, current loop, per-cycle fault checks |
 | Thread context | Dedicated motor thread at 1 kHz (not the system work queue): speed PI, reference ramps, state transitions, fault handling/reporting |
 | ISR ↔ thread data | Two structs, each single-writer: `cmd` (thread → ISR: state, id/iq refs, forced-angle speed) and `status` (ISR → thread). Exchanged via double buffer + atomic index; no locks in ISR |
-| Startup | Align → I/f ramp (current loop closed, forced angle) → hard switch to observer at fixed handover speed, speed-PI integrator preloaded with the I/f current → closed loop |
+| Startup | Align (d current ramp at 0, then the vector turns 90° in the start direction: no 180° dead point) → I/f ramp (current loop closed, current on the forced d axis; PLL slaved to the forced angle below ½ handover, then free on the observer) → hard switch to observer at fixed handover speed: current-PI integrators rotated into the PLL frame, speed-PI integrator preloaded with the torque part i_start·sin(δ) of the I/f current → closed loop. Handover speed ≥ the speed where ω·ψ clearly exceeds R·i_start (Rs errors read as EMF in I/f, see insights M3.2). Direction fixed at start, minimum speed = handover speed |
 | Observer | Luenberger on αβ current model; back-EMF states with rotating model (de/dt = ω·J·e, ω from PLL). Angle + speed from a normalised PLL with a frequency aid (see insights M3.1) |
 | Gains | Computed from motor params at init: PI by pole cancellation (Kp = L·ωc, Ki = R·ωc), observer poles and PLL bandwidth as multiples. Bandwidths in DT |
-| Faults v1 | HW break (TIM1 BRK) → PWM off. SW per cycle: over-current, over/under-voltage → PWM off, state = FAULT. Clear via `stop` |
+| Faults v1 | HW break (TIM1 BRK, raised via `foc_cycle_trip`) → PWM off. SW per cycle while the PWM is on: over-current (any phase, NaN trips), over/under-voltage (NaN trips both) → zero voltage in the same cycle, state = FAULT, PWM off. Latched in ISR and thread; cleared only via `stop`. The ISR clamps the current reference to the trip level |
 | API | Zephyr device per motor (`compatible = "pmsm,motor"`) referencing a power-stage node. API: `start`, `stop`, `set_speed`, `get_status` |
 | DT params | Integers with explicit units (`resistance-micro-ohms`, `inductance-nano-henries`, `flux-linkage-micro-webers`, `pole-pairs`, `inertia-nano-kg-m2`, `max-current-milliamps`, bandwidths in Hz…), converted to float once at init |
 | Verification | ztest unit tests + closed-loop sim. Sim (M2/M3) = plain C plant + FOC core in a ztest loop, no devices/timers → deterministic. `sim-power-stage` driver only in M4 to test the device layer |
@@ -52,6 +52,7 @@ include/pmsm/foc.h              # pure-C core API (no Zephyr deps); tiny transfo
 include/pmsm/motor.h            # public device API
 include/pmsm/power_stage.h      # driver class API
 lib/foc/                        # transforms.c (sincos, circle limit) svpwm.c pi.c gains.c foc.c (current loop) observer.c (+ duty history) pll.c
+                                # cycle.c (per-cycle ISR part: faults, forced angle, angle select) seq.c (1 kHz startup/speed sequencer)
 subsys/motor/                   # motor.c (device, ISR glue, thread, faults), motor_shell.c
 drivers/power_stage/            # power_stage_sim.c, power_stage_stm32_tim.c
 dts/bindings/                   # pmsm,motor.yaml, pmsm,sim-power-stage.yaml, st,stm32-tim-power-stage.yaml
@@ -101,9 +102,9 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 
 ### M3 Sensorless
 - [x] M3.1 Luenberger observer (rotating EMF) + PLL; test against plant angle at constant speed
-- [ ] M3.2 Startup state machine (align → I/f → handover → closed loop), ISR/thread split as decided
-- [ ] M3.3 Per-cycle faults (OC, OV, UV)
-- [ ] M3.4 Sim scenarios in CI: start-up, speed steps, load step
+- [x] M3.2 Startup state machine (align → I/f → handover → closed loop), ISR/thread split as decided
+- [x] M3.3 Per-cycle faults (OC, OV, UV)
+- [x] M3.4 Sim scenarios in CI: start-up, speed steps, load step
 
 ### M4 Zephyr device
 - [ ] M4.1 Power-stage API header + `pmsm,sim-power-stage` driver (wraps the plant)
@@ -266,3 +267,38 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
   ≈ 400 instructions per cycle; the whole per-cycle FOC path is ≈ 700.
 - Host `math.h` declares `finite()`; don't name static helpers after libm functions (broke a host
   build of `lib/foc`).
+- 2026-11-26 (M3.2–M3.4): Split as decided, both in the math core (no Zephyr): `foc_cycle` (`lib/foc/cycle.c`,
+  ISR) and `foc_seq` (`lib/foc/seq.c`, motor thread), exchanging `struct foc_cmd` (thread → ISR: state,
+  i_ref, forced speed, `pll_hold`) and `struct foc_status` (ISR → thread). M4 only adds the double buffer
+  and the power-stage glue: PWM on iff `status.state` is ALIGN/IF/RUN. The sim harness
+  `tests/sim/src/drive.c` runs `foc_cycle` every PWM cycle and `foc_seq` every 20 cycles on the plant.
+- I/f puts the current on the forced **d** axis (same frame as align, so the I/f start causes no torque
+  step). The rotor lags by δ with Kt·i·sin δ = load; at the handover `i_q = i_start·sin δ` (δ = forced − PLL
+  angle, from the status) keeps the torque, and the current-PI integrators are rotated by δ so the voltage
+  vector is continuous. The forced angle follows the PLL in RUN, so δ reads 0 there.
+- Two-step align: a rotor exactly 180° off is a dead point of a one-step align; it then ran I/f with the
+  PLL locked 180° off. Turning the align vector by 90° in the third quarter of `t_align` fixes it (any
+  start angle tested, both directions). In the sim the current loop damps the align swing within ~50 ms;
+  no active damping needed (the plant has almost no friction, so the hardware should be easier).
+- Handover speed: this motor has a large R·i against a small ψ: at 1 A and 15 rad/s mech, R·i = 3.6 V
+  vs ω·ψ = 1.8 V. In I/f with i_d = 1 A an Rs error turns ΔR·i_d into a false EMF along d. With Rs +30 %
+  and handover at 15 rad/s the PLL locked 180° off and the motor ran backwards. At 30 rad/s (≈ 290 rpm)
+  Rs/Ls ±30 % all start: handover angle error ≤ 0.29 rad, speed dip to 14 rad/s at worst (Rs ×1.3), back
+  in lock < 50 ms. On the hardware: measure Rs, or lower i_start before raising the handover speed.
+- Plant: the active `t_load` turns a stalled rotor backwards, so a loaded start needs a passive load. New
+  `t_fric` (Coulomb, sign smoothed with tanh over 0.5 rad/s) and `plant_coast()` (PWM off: currents 0,
+  mechanics only; valid below the voltage-limited top speed where the diodes stay off).
+- Faults: checked only while the PWM is on (trips while off are dropped, so a low Vbus at rest does not
+  latch; starting at that voltage trips in the first active cycle). Bad limits fail safe: they trip on the
+  first active cycle. The sequencer leaves STOP only once the status also says STOP, so a lagging FAULT
+  status cannot re-latch on restart. An over-current test "trip during align" was dropped: the ISR clamps
+  i_ref to i_trip, so with working sensing the loop cannot reach the trip level; OC comes from sensing
+  faults and shorts (covered by an injected offset and NaN, and by BRK on the hardware).
+- Sim results (defaults: i_start 1 A, align 0.1 s, I/f 300 rad/s² to 30 rad/s, ramp 500 rad/s²): standstill
+  → RUN in 0.2 s from any rotor angle; 50 rad/s reached with < 5 % overshoot, steady angle error < 1 mrad.
+  Start against 0.05 Nm friction: δ = asin(load/(Kt·i)) within 0.1 rad, preload within 15 % of load/Kt,
+  no dip below 90 % of the handover speed. 40 → 90 rad/s step < 3 % overshoot; 0.05 Nm load step at 90
+  rad/s dips < 40 %; target below the handover speed (or reversed) holds at the handover speed.
+- Cost on nucleo_c542rc `-Os`: `foc_cycle_step` 297 instructions (includes the rarely taken transition
+  code), `fill_status` 55 (one VSQRT), no libm calls; the per-cycle path is ≈ 850 instructions.
+  `foc_seq_step` 188, at 1 kHz.

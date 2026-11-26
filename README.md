@@ -6,7 +6,8 @@ Textbook algorithms, float32, MCU-agnostic except for one power-stage driver.
 Status, decisions and milestones: [docs/PLAN.md](docs/PLAN.md) · hardware: [docs/HARDWARE.md](docs/HARDWARE.md)
 · backlog: [docs/FEATURES.md](docs/FEATURES.md). Parts marked *(planned)* are not implemented yet.
 
-API reference: Doxygen in the headers, today only the math core [include/pmsm/foc.h](include/pmsm/foc.h).
+API reference: Doxygen in the headers, today only the math core [include/pmsm/foc.h](include/pmsm/foc.h)
+(including the ISR/thread split of the drive: `foc_cycle`, `foc_seq`).
 The motor device API (`start`, `stop`, `set_speed`, `get_status`) and its devicetree binding come in M4,
 see [docs/PLAN.md](docs/PLAN.md).
 
@@ -23,15 +24,15 @@ position sensor: an observer estimates angle and speed from the measured current
 
 ![Signal flow](docs/img/signal-flow.svg)
 
-## Startup *(planned, M3)*
+## Startup and faults
 
 ```mermaid
 stateDiagram-v2
   direction TB
   [*] --> STOP
   STOP --> ALIGN: start
-  ALIGN --> IF: rotor aligned
-  IF --> RUN: ω ≥ ω_handover, preload speed PI
+  ALIGN --> IF: t_align
+  IF --> RUN: |ω_f| ≥ ω_handover, preload speed PI
   ALIGN --> STOP: stop
   IF --> STOP: stop
   RUN --> STOP: stop
@@ -41,8 +42,28 @@ stateDiagram-v2
   FAULT --> STOP: stop
 ```
 
-ALIGN: fixed current on d at θ = 0. IF: current loop closed, angle ramped open-loop. RUN: observer angle,
-speed loop closed.
+The per-cycle part (`foc_cycle`, ADC interrupt) and the sequencer (`foc_seq`, 1 kHz motor thread) each own one
+struct: the sequencer writes the command (state, current reference, forced speed), the ISR the status (state,
+faults, PLL angle and speed, δ). Both live in the math core; the default timings below are the sim's.
+
+- **ALIGN** (0.1 s): d current ramps to i_start at θ = 0 over the first half, then the vector turns 90° in the
+  start direction during the third quarter and holds. A rotor 180° off, which a one-step align leaves where
+  it is, sees full torque in the second step.
+- **IF**: the forced angle θ_f ramps open loop (300 rad/s² to the handover speed) with i_start on the forced d
+  axis, current loop closed. The rotor lags by δ with K_t·i_start·sin δ = load. The observer runs all the
+  time; the PLL is slaved to θ_f below half the handover speed, then runs free to lock before the switch.
+- **Handover** at ω_handover (30 rad/s): the angle source switches to the PLL in one cycle. The current-PI
+  integrators are rotated by δ = θ_f − θ̂ so the voltage vector does not jump; the speed-PI integrator starts
+  at i_start·sin δ, the torque the rotor already gets, and the speed reference at the forced speed.
+- **RUN**: speed reference ramped to the target; the speed PI sets i_q. The direction is fixed at start
+  and the handover speed is the minimum speed (reversal = stop + start).
+
+Why 30 rad/s: in I/f the observer reads an Rs error as EMF along d (ΔR·i_d), and for this motor R·i at 1 A
+(3.6 V) is twice the true EMF at 15 rad/s. Above the handover speed the true EMF dominates.
+
+**Faults**, checked every cycle while the PWM is on, NaN-aware: any phase current beyond i_trip (OC), V_bus
+above or below its limits (OV/UV), or an external trip (`foc_cycle_trip`, the hardware break input). The ISR
+returns zero voltage in the same cycle and latches FAULT; the PWM goes off, and only `stop` clears it.
 
 ## Reference frames
 
@@ -79,9 +100,12 @@ $$
 \begin{aligned}
 L\,\dot i_d &= v_d - R\,i_d + \omega L\, i_q \\
 L\,\dot i_q &= v_q - R\,i_q - \omega L\, i_d - \omega\psi \\
-J\,\dot\omega_m &= \tfrac32\,p\,\psi\,i_q - B\,\omega_m - T_{load}, \qquad \omega = p\,\omega_m
+J\,\dot\omega_m &= \tfrac32\,p\,\psi\,i_q - B\,\omega_m - T_c\operatorname{sgn}(\omega_m) - T_{load}, \qquad \omega = p\,\omega_m
 \end{aligned}
 $$
+
+T_c is Coulomb friction (a passive load, sign smoothed in the sim), T_load an active torque. With the PWM off the
+sim holds the currents at 0 (valid while the line-to-line EMF stays below V_bus).
 
 Inverter: *v_x = (d_x − mean(d))·V_bus*. SVPWM adds min/max zero-sequence injection; linear up to
 |v| = (2·d_max − 1)·V_bus/√3.

@@ -52,7 +52,9 @@ Layers (see the module layout and power-stage API sketch in `docs/PLAN.md`):
 
 1. **Math core** — `include/pmsm/foc.h` + `lib/foc/` (`CONFIG_PMSM_FOC`). Plain C99, float32,
    **no Zephyr includes**, so it is portable and testable as-is. Contains the current loop (`foc.c`),
-   duty history + observer (`observer.c`) and PLL (`pll.c`); the startup state machine comes next.
+   duty history + observer (`observer.c`), PLL (`pll.c`), the per-cycle ISR part (`cycle.c`: faults,
+   forced angle, angle select) and the 1 kHz startup/speed sequencer (`seq.c`), which exchange
+   `foc_cmd`/`foc_status`. Sim harness for the whole drive: `tests/sim/src/drive.c`.
 2. **Motor subsystem** (planned, `subsys/motor/`) — `pmsm,motor` device: FOC in the ADC ISR (no kernel
    calls), speed loop/state machine in a 1 kHz motor thread, single-writer `cmd`/`status` structs
    exchanged via double buffer + atomic index.

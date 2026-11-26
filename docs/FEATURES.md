@@ -7,6 +7,10 @@ Candidates that would improve the library. Move an item into `docs/PLAN.md` when
 - Stall / observer-loss detection (inputs exist: `foc_pll.err`, `foc_pll.f_err`, `|ê|` vs ψ·ω̂)
 - Sensorless reversal through zero speed (v1: the observer is unreliable near standstill; stop and restart instead)
 - Smooth angle-error blend from forced angle to observer (v1: hard switch)
+- Lower handover speed: reduce i_d before the switch, or compensate the Rs error in I/f (v1 switches at 30 rad/s
+  because ΔR·i_d reads as EMF, see PLAN insights M3.2)
+- Active damping of the align/I/f swing (q current from the EMF in the forced frame), if the hardware needs it
+- Minimum running speed below the handover speed (the observer tracks down to ≈ 5 rad/s once locked)
 - Runtime parameter override (API + shell `motor params`)
 - Gain/parameter persistence via Zephyr settings
 - Fault callback in the public API
