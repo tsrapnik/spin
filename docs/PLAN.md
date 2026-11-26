@@ -115,7 +115,7 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 ### M4 Zephyr device
 - [x] M4.1 Power-stage API header + `pmsm,sim-power-stage` driver (wraps the plant)
 - [x] M4.2 `pmsm,motor` binding + device, motor thread, cmd/status exchange; `tests/motor` (API, faults, offsets)
-- [ ] M4.3 Shell: `motor start|stop|speed <rpm>|status`
+- [x] M4.3 Shell: `motor start|stop|speed <rpm>|status`
 - [ ] M4.4 `samples/motor_basic` on native_sim; extend `tests/motor` (shell)
 
 ### M5 STM32 power stage
@@ -355,3 +355,14 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
   direction fixed, stop → coasting with zero current, `-EBUSY` right after stop, restart, BRK pulse → FAULT/`-EIO`
   → stop clears → restart, BRK held at start → FAULT, offsets calibrated / `-ERANGE`, NaN/Inf → `-EINVAL`;
   `late == 0` throughout. native_sim runs in simulated time, so `k_msleep` waits are deterministic.
+- 2026-11-26 (M4.3): `subsys/motor/motor_shell.c`, `CONFIG_PMSM_MOTOR_SHELL` (default y with `SHELL`):
+  `motor start <rpm> [device]`, `stop [device]`, `speed <rpm> [device]`, `status [device]`; without a name the
+  first `pmsm,motor` instance. Only names from the DT motor list are accepted (no `device_get_binding()` on an
+  arbitrary device), and `stop`/`status` complete them. rpm is an integer (`shell_strtol`, |rpm| ≤ 1e6): no
+  `strtof` dependency, and sub-rpm resolution is not needed from a shell. Start errors are spelled out
+  (`-EALREADY`, `-EIO` fault, `-EBUSY` still stopping, `-ERANGE` offsets). `status` prints fixed-point via
+  `snprintk` so targets need no `CBPRINTF_FP_SUPPORT`; raw i/vbus may be NaN/Inf and print as such (no UB
+  float→int cast). GCC `-Wformat-truncation` on ARM wants 32-byte scratch buffers for that helper.
+- Checked in a scratch app (dummy shell backend, ASan + UBSan on native_sim/native/64; ARM build warning-free):
+  start 500 → RUN at 500.0 rpm, speed 700, stop, `-EBUSY` right after stop, reverse start −400, error paths.
+  The committed shell test is M4.4. In STOP, `status` still shows the last ref/target (as `motor_status`).

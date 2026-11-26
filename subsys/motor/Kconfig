@@ -44,4 +44,12 @@ config PMSM_MOTOR_THREAD_STACK_SIZE
 	int "Motor thread stack size"
 	default 1024
 
+config PMSM_MOTOR_SHELL
+	bool "Motor shell commands"
+	default y
+	depends on SHELL
+	help
+	  "motor start <rpm>|stop|speed <rpm>|status [device]"; without a
+	  device name they act on the first pmsm,motor instance.
+
 endif # PMSM_MOTOR
