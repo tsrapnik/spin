@@ -31,7 +31,7 @@ flowchart LR
     E3(("Σ")) --> QPI[q PI]
     DPI -->|v_d| LIM[circle limit<br/>d first]
     QPI -->|v_q| LIM
-    LIM --> IP["Park⁻¹"] --> SV[SVPWM] -->|d_abc| PS[[power stage]]
+    LIM --> IP["Park⁻¹ at θ + ω·1.5 T_s"] --> SV[SVPWM] -->|d_abc| PS[[power stage]]
     PS -->|"i_abc, V_bus"| CL[Clarke] -->|i_αβ| P[Park]
     P -->|"−i_d"| E2
     P -->|"−i_q"| E3
@@ -112,8 +112,11 @@ Inverter: *v_x = (d_x − mean(d))·V_bus*. SVPWM adds min/max zero-sequence inj
 
 ![PWM timing](docs/img/timing.svg)
 
-A duty written in ISR *k* is latched at the next update event, one PWM period of delay. The observer pairs each
-sample with the duty that was actually applied before it. The simulation models the same delay.
+The high-side pulse is centred on the counter valley, so the low-side window (where the shunts carry the
+current) is centred on the peak. Sampling there gives the average of the rippled current. A duty written in
+ISR *k* is latched at the next peak, one PWM period of delay. The inverse Park uses
+θ + ω·1.5 T_s, the angle at the centre of the period the duty acts in. The observer pairs each sample with the
+duty that was actually applied before it. The simulation models the same delay.
 
 ## Gains
 
