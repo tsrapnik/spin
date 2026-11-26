@@ -14,6 +14,8 @@ Candidates that would improve the library. Move an item into `docs/PLAN.md` when
 ## Control & estimation
 - Measure phase voltages (resistor dividers) → better observer at low speed, dead-time-free voltage
 - Closed-loop startup (HFI / signal injection, initial position detection, zero-speed operation)
+- Current-loop decoupling feed-forward (−ωL·iq on d, +ω(L·id + ψ) on q): faster disturbance rejection at
+  high speed; v1 relies on the PI integrators
 - Half-period duty latch: TIM1 update at both peak and valley (RCR = 0), duty from ISR k latched at the
   next valley → loop delay 1.0·Ts instead of 1.5·Ts (~1.5× current bandwidth at equal phase margin).
   Needs: ISR + ADC done within Ts/2 every cycle (top-priority direct IRQ, overrun detection; a late

@@ -225,4 +225,44 @@ ZTEST(foc_nonfinite, test_gains)
 	zassert_true(g.kp == 0.0f && g.ki == 0.0f);
 }
 
+ZTEST(foc_nonfinite, test_current_step)
+{
+	const float good[] = {0.0f, 1.0f, -2.0f};
+	struct foc_current c;
+
+	for (size_t i = 0; i < N_BAD + 3; i++) {
+		float x = i < N_BAD ? bad[i] : good[i - N_BAD];
+		/* Each input bad in turn, the others good. */
+		struct {
+			struct foc_abc i;
+			float vbus, theta, omega;
+			struct foc_dq ref;
+		} cases[] = {
+			{{x, 0.1f, -0.1f}, 24.0f, 0.5f, 100.0f, {0.0f, 1.0f}},
+			{{0.1f, x, x}, 24.0f, 0.5f, 100.0f, {0.0f, 1.0f}},
+			{{0.1f, 0.0f, -0.1f}, x, 0.5f, 100.0f, {0.0f, 1.0f}},
+			{{0.1f, 0.0f, -0.1f}, 24.0f, x, 100.0f, {0.0f, 1.0f}},
+			{{0.1f, 0.0f, -0.1f}, 24.0f, 0.5f, x, {0.0f, 1.0f}},
+			{{0.1f, 0.0f, -0.1f}, 24.0f, 0.5f, 100.0f, {x, x}},
+		};
+
+		for (size_t k = 0; k < ARRAY_SIZE(cases); k++) {
+			foc_current_init(&c, (struct foc_pi_gains){.kp = 5.0f, .ki = 1e4f}, 50e-6f,
+					 0.95f, 75e-6f);
+			for (int n = 0; n < 3; n++) {
+				struct foc_abc d = foc_current_step(&c, cases[k].i, cases[k].vbus,
+								    cases[k].theta, cases[k].omega,
+								    cases[k].ref);
+
+				zassert_true(in_range(d.a, 0.05f, 0.95f) &&
+						     in_range(d.b, 0.05f, 0.95f) &&
+						     in_range(d.c, 0.05f, 0.95f),
+					     "x %e case %zu", (double)x, k);
+				zassert_true(isfinite(c.v.d) && isfinite(c.v.q));
+				zassert_true(isfinite(c.d.integ) && isfinite(c.q.integ));
+			}
+		}
+	}
+}
+
 ZTEST_SUITE(foc_nonfinite, NULL, NULL, NULL, NULL, NULL);

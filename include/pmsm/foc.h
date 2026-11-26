@@ -341,6 +341,70 @@ FOC_INLINE float foc_torque_constant(float psi, unsigned int pole_pairs)
 	return 1.5f * (float)pole_pairs * psi;
 }
 
+/**
+ * \brief d/q current controller: Park, two PIs, voltage limit, SVPWM.
+ *
+ * The d PI is limited to +-vmax and the q PI to foc_q_limit(vd, vmax), with
+ * vmax = foc_svpwm_vmax(vbus, max_duty), so both anti-windups see the real
+ * circle and d has priority. No decoupling feed-forward: the PI treats the
+ * cross-coupling and the back-EMF as disturbances.
+ *
+ * The inverse Park uses the angle advanced by omega * t_adv. The duty
+ * written now acts during the next PWM period, whose centre lies 1.5
+ * periods after the sample, so t_adv = 1.5 * ts compensates the rotation
+ * during that delay.
+ */
+struct foc_current {
+	struct foc_pi d; /**< d-axis PI, output in volts. */
+	struct foc_pi q; /**< q-axis PI, output in volts. */
+	float max_duty;  /**< Highest duty, see foc_svpwm(). */
+	float t_adv;     /**< Angle advance time for the inverse Park, s. */
+	struct foc_dq i; /**< Measured current of the last step (may be NaN). */
+	struct foc_dq v; /**< Voltage command of the last step, always finite. */
+};
+
+/** \brief Angle advance for a one-period duty delay, in PWM periods. */
+#define FOC_ADVANCE_PERIODS 1.5f
+
+/**
+ * \brief Set gains, limits and advance; clear the integrators.
+ *
+ * \param g Current PI gains, see foc_gains_current(); used for d and q.
+ * \param ts Sample period in seconds.
+ * \param max_duty Highest duty, clamped to [0.5, 1]; NaN gives 0.5 (no
+ *        voltage).
+ * \param t_adv Angle advance time in seconds, usually
+ *        #FOC_ADVANCE_PERIODS * \p ts; negative or not finite gives 0.
+ */
+void foc_current_init(struct foc_current *c, struct foc_pi_gains g, float ts, float max_duty,
+		      float t_adv);
+
+/** \brief Clear both integrators, e.g. when the PWM is switched off. */
+FOC_INLINE void foc_current_reset(struct foc_current *c)
+{
+	foc_pi_reset(&c->d, 0.0f);
+	foc_pi_reset(&c->q, 0.0f);
+	c->v = (struct foc_dq){0};
+}
+
+/**
+ * \brief Run one current-loop step.
+ *
+ * Always returns duties in [1 - max_duty, max_duty]. A NaN current makes
+ * the PIs hold (the per-cycle fault check must catch it, see the header
+ * comment); a NaN angle or speed counts as 0; a NaN or too low \p vbus
+ * gives zero voltage.
+ *
+ * \param i_abc Measured phase currents, A.
+ * \param vbus Measured DC-bus voltage, V.
+ * \param theta Electrical angle of the d axis at the sample, rad.
+ * \param omega Electrical speed, rad/s (for the angle advance).
+ * \param ref Current reference, A.
+ * \return Duties for the next PWM period.
+ */
+struct foc_abc foc_current_step(struct foc_current *c, struct foc_abc i_abc, float vbus,
+				float theta, float omega, struct foc_dq ref);
+
 #ifdef __cplusplus
 }
 #endif

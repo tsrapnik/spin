@@ -6,4 +6,5 @@ zephyr_library_sources(
   svpwm.c
   pi.c
   gains.c
+  foc.c
 )

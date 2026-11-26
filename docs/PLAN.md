@@ -51,7 +51,7 @@ zephyr/module.yml  CMakeLists.txt  Kconfig
 include/pmsm/foc.h              # pure-C core API (no Zephyr deps); tiny transforms inline
 include/pmsm/motor.h            # public device API
 include/pmsm/power_stage.h      # driver class API
-lib/foc/                        # transforms.c (sincos, circle limit) svpwm.c pi.c gains.c observer.c pll.c foc.c
+lib/foc/                        # transforms.c (sincos, circle limit) svpwm.c pi.c gains.c foc.c (current loop) observer.c pll.c
 subsys/motor/                   # motor.c (device, ISR glue, thread, faults), motor_shell.c
 drivers/power_stage/            # power_stage_sim.c, power_stage_stm32_tim.c
 dts/bindings/                   # pmsm,motor.yaml, pmsm,sim-power-stage.yaml, st,stm32-tim-power-stage.yaml
@@ -97,7 +97,7 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 
 ### M2 Plant + closed-loop sim (ideal angle)
 - [x] M2.1 Discrete PMSM model (dq: Rs, Ls, flux, pole pairs, J, B, load torque) + ideal inverter (duty → voltage) with the duty delay
-- [ ] M2.2 FOC current loop + speed loop with true angle; CI tests: current step response, speed step
+- [x] M2.2 FOC current loop + speed loop with true angle; CI tests: current step response, speed step
 
 ### M3 Sensorless
 - [ ] M3.1 Luenberger observer (rotating EMF) + PLL; test against plant angle at constant speed
@@ -208,3 +208,20 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
   (`docs/img/pid.svg`), signal flow, startup states and layers (Mermaid), frames and PWM timing
   (`docs/img/*.svg`, light/dark via `prefers-color-scheme`), plus the equations (amplitude-invariant
   Clarke and the 3/2 in torque, motor model, gains, observer/PLL). Integration guide still to do.
+- 2026-11-26 (M2.2): `foc_current_step()` in `lib/foc/foc.c`: Clarke → Park (θ) → d PI (±vmax) → q PI
+  (±`foc_q_limit(vd, vmax)`) → inverse Park at θ + ω·t_adv → SVPWM. Takes the angle and speed as inputs, so
+  the M3 observer/forced angle plug in without changes. No decoupling feed-forward (backlog). The speed PI
+  stays a plain `foc_pi` stepped by the caller (the motor thread in M4; `tests/sim/src/sim.c` now).
+- Angle advance `t_adv = 1.5·Ts` (`FOC_ADVANCE_PERIODS`): the duty acts during the next period, centred
+  1.5 periods after the sample. At 40 rad/s mech it cuts the d excursion on a 1 A q step from 63 to 53 mA.
+  Costs a second `foc_sincos`.
+- Sim results (FIT1036 estimates, 24 V, 20 kHz, delay 1, current 500 Hz, speed 50 Hz): current step
+  t63 = 0.94 τ, no overshoot at standstill or ±40 rad/s; at fs/20 (1 kHz) 2 % overshoot, at fs/10 13 %.
+  Speed step 0 → 50 rad/s: 18 % overshoot (PI zero at wc/4 on a reference step; M3 ramps remove it),
+  settles to 2 % in 36 ms. Load step 0.05 Nm: dip to 31 rad/s (J is tiny), back in 35 ms, iq = TL/Kt.
+  Top speed at 24 V is where the back-EMF fills the circle: vmax/(p·ψ) ≈ 103 rad/s ≈ 980 rpm with the
+  ψ estimate; no windup in either PI when saturated there.
+- With the duty delay the PI "catches up": delay 0, 1 and 2 cross 63 % on the same cycle at 500 Hz, so
+  the response is a poor detector of the delay. M3 observer tests must check the delay directly.
+- `foc_current_step` on nucleo_c542rc `-Os`: 79 instructions plus calls to `foc_sincos` (2×),
+  `foc_pi_step` (2×) and `foc_svpwm`: about 300 instructions per cycle, a few % of the 20 kHz budget.
