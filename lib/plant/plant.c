@@ -4,7 +4,7 @@
 
 #include <math.h>
 
-#include "plant.h"
+#include <pmsm/plant.h>
 
 #define SQRT3_D   1.73205080756887729353
 #define ZERO_DUTY ((struct foc_abc){.a = 0.5f, .b = 0.5f, .c = 0.5f})

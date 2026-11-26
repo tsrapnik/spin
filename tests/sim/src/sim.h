@@ -13,8 +13,7 @@
 
 #include <stdbool.h>
 #include <pmsm/foc.h>
-
-#include "plant.h"
+#include <pmsm/plant.h>
 
 /** \brief Controller settings. */
 struct sim_cfg {

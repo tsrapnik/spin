@@ -11,8 +11,7 @@
 
 #include <stdbool.h>
 #include <pmsm/foc.h>
-
-#include "plant.h"
+#include <pmsm/plant.h>
 
 struct drive {
 	struct plant p;

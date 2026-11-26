@@ -50,27 +50,33 @@ west.yml                        # pins zephyr + hal_stm32 + cmsis_6
 zephyr/module.yml  CMakeLists.txt  Kconfig
 include/pmsm/foc.h              # pure-C core API (no Zephyr deps); tiny transforms inline
 include/pmsm/motor.h            # public device API
-include/pmsm/power_stage.h      # driver class API
+include/pmsm/power_stage.h      # driver class API; power_stage_sim.h: sim extras (plant access, BRK, offsets)
+include/pmsm/plant.h            # plant model API (sim only)
+lib/plant/                      # plant.c: pure-C PMSM + ideal inverter, double precision (CONFIG_PMSM_PLANT)
 lib/foc/                        # transforms.c (sincos, circle limit) svpwm.c pi.c gains.c foc.c (current loop) observer.c (+ duty history) pll.c
                                 # cycle.c (per-cycle ISR part: faults, forced angle, angle select) seq.c (1 kHz startup/speed sequencer)
 subsys/motor/                   # motor.c (device, ISR glue, thread, faults), motor_shell.c
 drivers/power_stage/            # power_stage_sim.c, power_stage_stm32_tim.c
-dts/bindings/                   # pmsm,motor.yaml, pmsm,sim-power-stage.yaml, st,stm32-tim-power-stage.yaml
+dts/bindings/                   # vendor-prefixes.txt (pmsm); power-stage/pmsm,sim-power-stage.yaml,
+                                # st,stm32-tim-power-stage.yaml; pmsm,motor.yaml
 tests/lib/foc/                  # unit tests
-tests/sim/                      # plant/ (pure-C plant model) + src/ closed-loop scenarios
+tests/sim/                      # closed-loop scenarios on the plant (no devices)
+tests/power_stage/              # sim power-stage driver: API contract + closed loop through the API
 tests/motor/                    # device layer on sim power stage
 samples/motor_basic/            # shell sample; boards/nucleo_c542rc.overlay
 docs/PLAN.md  docs/FEATURES.md  docs/HARDWARE.md
 ```
 
-### Power-stage API (sketch)
+### Power-stage API (`include/pmsm/power_stage.h`)
 
-- `calibrate_offsets(dev)`
-- `enable(dev)`, `disable(dev)` (ISR-safe)
-- `set_duty(dev, da, db, dc)` — 0..1, latched at next update event
-- `register_cb(dev, fn(const struct ps_sample *, void *), user)` with
-  `ps_sample = {ia, ib, ic, vbus}`
-- `get_info(dev)` — pwm freq, dead-time, max duty for sampling window
+- `power_stage_calibrate_offsets(dev)` — thread, outputs off
+- `power_stage_enable(dev)` (re-arms BRK; `-EIO` while BRK active), `power_stage_disable(dev)` (duty → 0.5); ISR-safe
+- `power_stage_set_duty(dev, da, db, dc)` — 0..1, clamped to [1 − max_duty, max_duty], NaN → 0.5, latched at the
+  next update event
+- `power_stage_register_cb(dev, fn(dev, const struct power_stage_sample *, user), user)` with
+  `power_stage_sample = {ia, ib, ic, vbus, flags}`; `POWER_STAGE_FLAG_BREAK` reports a hardware break.
+  The callback runs every PWM period, outputs on or off; enable/disable switch the bridge only
+- `power_stage_get_info(dev)` — `ts`, `dead_time`, `max_duty` (sampling window), `duty_delay`
 
 STM32 impl: TIM1 center-aligned complementary + dead-time, preload, TRGO2/OC4 → ADC injected
 sequence (2 currents per sector + Vbus), BRK input, JEOC IRQ.
@@ -107,7 +113,7 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 - [x] M3.4 Sim scenarios in CI: start-up, speed steps, load step
 
 ### M4 Zephyr device
-- [ ] M4.1 Power-stage API header + `pmsm,sim-power-stage` driver (wraps the plant)
+- [x] M4.1 Power-stage API header + `pmsm,sim-power-stage` driver (wraps the plant)
 - [ ] M4.2 `pmsm,motor` binding + device, motor thread, cmd/status exchange
 - [ ] M4.3 Shell: `motor start|stop|speed <rpm>|status`
 - [ ] M4.4 `samples/motor_basic` on native_sim; `tests/motor`
@@ -302,3 +308,25 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 - Cost on nucleo_c542rc `-Os`: `foc_cycle_step` 297 instructions (includes the rarely taken transition
   code), `fill_status` 55 (one VSQRT), no libm calls; the per-cycle path is ≈ 850 instructions.
   `foc_seq_step` 188, at 1 kHz.
+- 2026-11-26 (M4.1): Plant moved to `lib/plant/` + `include/pmsm/plant.h` (`CONFIG_PMSM_PLANT`, selects
+  `PMSM_FOC`); `tests/sim` uses it unchanged. Power-stage class in `include/pmsm/power_stage.h`
+  (`__subsystem` + `DEVICE_API(power_stage, …)`), `CONFIG_PMSM_POWER_STAGE`. Out of tree, the header must be
+  registered with `zephyr_syscall_header()` (done in `drivers/CMakeLists.txt`), otherwise the API's iterable
+  section is not generated and `DEVICE_API_GET` fails to link (`_power_stage_driver_api_list_start`).
+  Twister treats an unknown vendor prefix as a devicetree error: `dts/bindings/vendor-prefixes.txt` adds `pmsm`.
+- BRK is reported in-band (`POWER_STAGE_FLAG_BREAK` in the next sample) instead of a second callback, so the
+  motor ISR glue raises `foc_cycle_trip(FOC_FAULT_EXT)` in the same context as `foc_cycle_step` (no locking).
+- `pmsm,sim-power-stage` (`drivers/power_stage/power_stage_sim.c`): per cycle sample (+ injected − calibrated
+  offset) → callback → `plant_step(latest duty)` if on, else `plant_coast()`. DT holds the "true" motor (integer
+  units), separate from the controller's parameters, so mismatch tests stay possible. Cycle source: a kernel
+  timer that runs the cycles due by `k_uptime_ticks()` (`tick-period-us`, default 1000), or none
+  (`tick-period-us = 0`) and the test steps with `power_stage_sim_run()` (deterministic). native_sim's tick is
+  100 Hz, so a 1 ms timer fires every 10 ms: a fixed batch per expiry ran 10× too slow; following the uptime
+  fixes it (200-cycle batches at 20 kHz). Extras: `power_stage_sim_lock()` (plant access), `_set_offset()`,
+  `_brk()`, `_cycles()`.
+- Tests `pmsm.power_stage.sim` (+ `.sanitize`): sample = plant state, one callback per cycle on and off, duty delay
+  and hold, clamp incl. non-finite, disable in the callback acts in the same cycle, `-EBUSY`/`-EIO`/`-ERANGE`
+  paths, offset calibration, BRK reported once and blocking enable while active, timer source tracks uptime.
+  Closed loop through the API (`foc_cycle` in the callback, `foc_seq` every 20 cycles in it for determinism):
+  standstill → RUN in < 0.5 s, 50 rad/s ± 5 %, BRK → FAULT with `FOC_FAULT_EXT`, stop clears it.
+  Pitfall: 950 · 1e-3f ≠ 0.95f and 1 − 0.95f ≠ 0.05f in float; tests compare against `info->max_duty`.

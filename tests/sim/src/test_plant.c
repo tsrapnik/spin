@@ -5,8 +5,7 @@
 #include <math.h>
 #include <zephyr/ztest.h>
 #include <pmsm/foc.h>
-
-#include "plant.h"
+#include <pmsm/plant.h>
 
 #define RS      3.6f
 #define LS      1.5e-3f

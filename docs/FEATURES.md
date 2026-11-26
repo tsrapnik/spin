@@ -52,4 +52,6 @@ Candidates that would improve the library. Move an item into `docs/PLAN.md` when
 - More static checks: CodeChecker/clang-tidy and sparse (`ZEPHYR_SCA_VARIANT`), MISRA C:2012 checking
   of the Zephyr guideline subset (ECLAIR/Coverity, commercial). Only if safety-style compliance is wanted
 - Real-time data logging (ring buffer → RTT/shell), scope/tuning host tool
-- Non-ideal inverter in sim (dead-time, switch drops, ADC quantisation/noise)
+- Non-ideal inverter in sim (dead-time, switch drops, ADC quantisation/noise); the sim power stage reports
+  `dead-time-ns` but does not model it
+- Userspace access to the power-stage API (syscalls); v1 calls it from the kernel only (ISR + motor thread)

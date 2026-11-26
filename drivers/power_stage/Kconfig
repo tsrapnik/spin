@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: MIT
+
+menuconfig PMSM_POWER_STAGE
+	bool "PMSM power-stage drivers"
+	help
+	  Power-stage driver class: synchronised three-phase PWM plus
+	  current and bus-voltage sampling, one callback per PWM cycle.
+	  See include/pmsm/power_stage.h.
+
+if PMSM_POWER_STAGE
+
+module = PMSM_POWER_STAGE
+module-str = pmsm_power_stage
+source "subsys/logging/Kconfig.template.log_config"
+
+config PMSM_POWER_STAGE_INIT_PRIORITY
+	int "Power-stage driver init priority"
+	default KERNEL_INIT_PRIORITY_DEVICE
+	help
+	  Must run before the motor devices that use the power stage.
+
+config PMSM_POWER_STAGE_SIM
+	bool "Simulated power stage"
+	default y
+	depends on DT_HAS_PMSM_SIM_POWER_STAGE_ENABLED
+	select PMSM_PLANT
+	help
+	  Power stage that drives the plant model (lib/plant) instead of
+	  hardware, for tests and samples on native_sim. PWM cycles come from
+	  a kernel timer, in batches per timer period, or are stepped by the
+	  application with power_stage_sim_run().
+
+endif # PMSM_POWER_STAGE

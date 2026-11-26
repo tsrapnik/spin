@@ -28,8 +28,8 @@
  *   plant_step(&p, duty);                       (one PWM period)
  */
 
-#ifndef PMSM_SIM_PLANT_H_
-#define PMSM_SIM_PLANT_H_
+#ifndef PMSM_PLANT_H_
+#define PMSM_PLANT_H_
 
 #include <pmsm/foc.h>
 
@@ -144,4 +144,4 @@ double plant_torque(const struct plant *p);
 }
 #endif
 
-#endif /* PMSM_SIM_PLANT_H_ */
+#endif /* PMSM_PLANT_H_ */

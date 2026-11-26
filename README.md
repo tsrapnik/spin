@@ -94,7 +94,7 @@ $$
 
 ## Motor model
 
-Surface PMSM (L_d = L_q = L), rotor frame. Used by the simulation plant ([tests/sim/plant/](tests/sim/plant/)).
+Surface PMSM (L_d = L_q = L), rotor frame. Used by the simulation plant ([lib/plant/](lib/plant/)), behind the simulated power stage.
 
 $$
 \begin{aligned}
@@ -196,7 +196,7 @@ flowchart TB
   end
   MOT -->|"set_duty · sample callback"| PSD
   subgraph PM["per MCU"]
-    PSD["power-stage driver (planned)<br/>STM32 TIM1 + ADC1 · sim"]
+    PSD["power-stage driver<br/>include/pmsm/power_stage.h<br/>sim (plant) · STM32 TIM1 + ADC1 (planned)"]
   end
   PSD --> HW["inverter + shunts"]
 ```

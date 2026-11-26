@@ -5,8 +5,7 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(pmsm_sim_test)
 
 FILE(GLOB app_sources src/*.c)
-target_sources(app PRIVATE ${app_sources} plant/plant.c)
-target_include_directories(app PRIVATE plant)
+target_sources(app PRIVATE ${app_sources})
 
 # UBSan only reports and continues by default; make every finding abort the test.
 if(CONFIG_UBSAN)

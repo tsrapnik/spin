@@ -1,0 +1,21 @@
+common:
+  tags:
+    - pmsm
+    - power_stage
+# Host only: the simulated power stage drives the double-precision plant.
+tests:
+  pmsm.power_stage.sim:
+    platform_allow:
+      - native_sim
+    integration_platforms:
+      - native_sim
+  pmsm.power_stage.sim.sanitize:
+    # ASan + UBSan, see tests/lib/foc/testcase.yaml.
+    platform_allow:
+      - native_sim/native/64
+    integration_platforms:
+      - native_sim/native/64
+    extra_configs:
+      - CONFIG_ASAN=y
+      - CONFIG_ASAN_RECOVER=n
+      - CONFIG_UBSAN=y

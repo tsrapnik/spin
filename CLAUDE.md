@@ -48,21 +48,27 @@ To check codegen, disassemble the twister ARM build:
 
 ## Architecture
 
-Layers (see the module layout and power-stage API sketch in `docs/PLAN.md`):
+Layers (see the module layout and power-stage API in `docs/PLAN.md`):
 
 1. **Math core** — `include/pmsm/foc.h` + `lib/foc/` (`CONFIG_PMSM_FOC`). Plain C99, float32,
    **no Zephyr includes**, so it is portable and testable as-is. Contains the current loop (`foc.c`),
    duty history + observer (`observer.c`), PLL (`pll.c`), the per-cycle ISR part (`cycle.c`: faults,
    forced angle, angle select) and the 1 kHz startup/speed sequencer (`seq.c`), which exchange
-   `foc_cmd`/`foc_status`. Sim harness for the whole drive: `tests/sim/src/drive.c`.
+   `foc_cmd`/`foc_status`. Sim harness for the whole drive: `tests/sim/src/drive.c`. The plant model
+   (`include/pmsm/plant.h`, `lib/plant/`, `CONFIG_PMSM_PLANT`) is plain C too, double precision, sim only.
 2. **Motor subsystem** (planned, `subsys/motor/`) — `pmsm,motor` device: FOC in the ADC ISR (no kernel
    calls), speed loop/state machine in a 1 kHz motor thread, single-writer `cmd`/`status` structs
    exchanged via double buffer + atomic index.
-3. **Power-stage driver class** (planned, `drivers/power_stage/`) — the only per-MCU part: synchronised
-   PWM + current/Vbus sampling (STM32 TIM1 + ADC1 injected, and a sim driver wrapping the plant).
-   Deliberately not Zephyr's `pwm`/`adc` APIs.
+3. **Power-stage driver class** (`include/pmsm/power_stage.h`, `drivers/power_stage/`,
+   `CONFIG_PMSM_POWER_STAGE`) — the only per-MCU part: synchronised PWM + current/Vbus sampling, one
+   callback per PWM cycle in ISR context, BRK reported in the sample flags. Deliberately not Zephyr's
+   `pwm`/`adc` APIs. Done: `pmsm,sim-power-stage` (wraps the plant; extras in
+   `include/pmsm/power_stage_sim.h`; `tick-period-us = 0` for deterministic stepping). Planned: STM32
+   TIM1 + ADC1 injected. The header is registered with `zephyr_syscall_header()` so the `__subsystem`
+   API section gets generated (out-of-tree requirement).
 
-`zephyr/module.yml` registers the module (cmake, Kconfig, `dts_root`); `Kconfig` makes
+`zephyr/module.yml` registers the module (cmake, Kconfig, `dts_root`; bindings and
+`dts/bindings/vendor-prefixes.txt` with `pmsm`); `Kconfig` makes
 `CONFIG_PMSM_FOC` select `FPU` + `FPU_SHARING` (ISR and thread both use float; Zephyr defaults to
 soft-float).
 

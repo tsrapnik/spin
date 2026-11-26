@@ -1,0 +1,23 @@
+/* SPDX-License-Identifier: MIT */
+
+/* FIT1036 estimates (docs/HARDWARE.md), 24 V, 20 kHz, as tests/sim. */
+#define PS_FIT1036                                                                                 \
+	compatible = "pmsm,sim-power-stage";                                                       \
+	resistance-micro-ohms = <3600000>;                                                         \
+	inductance-nano-henries = <1500000>;                                                       \
+	flux-linkage-micro-webers = <11000>;                                                       \
+	pole-pairs = <11>;                                                                         \
+	inertia-nano-kg-m2 = <6000>
+
+/ {
+	/* Stepped by the tests with power_stage_sim_run(). */
+	ps_manual: power-stage-manual {
+		PS_FIT1036;
+		tick-period-us = <0>;
+	};
+
+	/* Runs on its kernel timer. */
+	ps_timer: power-stage-timer {
+		PS_FIT1036;
+	};
+};

@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: MIT
+
+description: |
+  Simulated three-phase power stage driving a PMSM plant model, for tests
+  and samples on native_sim (see include/pmsm/power_stage_sim.h).
+
+  The motor properties describe the simulated motor ("the truth"), not the
+  controller's model of it, so a motor node can be given deliberately wrong
+  parameters for robustness tests.
+
+  Example (FIT1036 estimates, 24 V, 20 kHz):
+
+    power_stage: power-stage {
+      compatible = "pmsm,sim-power-stage";
+      resistance-micro-ohms = <3600000>;
+      inductance-nano-henries = <1500000>;
+      flux-linkage-micro-webers = <11000>;
+      pole-pairs = <11>;
+      inertia-nano-kg-m2 = <6000>;
+    };
+
+compatible: "pmsm,sim-power-stage"
+
+properties:
+  pwm-frequency-hz:
+    type: int
+    default: 20000
+    description: PWM frequency; one sample and callback per period.
+
+  max-duty-permille:
+    type: int
+    default: 950
+    description: |
+      Highest duty applied, per mille; the lowest is 1000 minus this.
+      Reported in power_stage_info.max_duty.
+
+  duty-delay:
+    type: int
+    default: 1
+    enum: [0, 1, 2]
+    description: PWM periods from set_duty() to the applied duty (1 on hardware).
+
+  dead-time-ns:
+    type: int
+    default: 0
+    description: Reported in power_stage_info only; the simulated inverter is ideal.
+
+  vbus-millivolts:
+    type: int
+    default: 24000
+    description: Initial DC-bus voltage.
+
+  resistance-micro-ohms:
+    type: int
+    required: true
+    description: Phase resistance.
+
+  inductance-nano-henries:
+    type: int
+    required: true
+    description: Phase inductance (Ld = Lq).
+
+  flux-linkage-micro-webers:
+    type: int
+    required: true
+    description: Permanent-magnet flux linkage, peak per phase.
+
+  pole-pairs:
+    type: int
+    required: true
+
+  inertia-nano-kg-m2:
+    type: int
+    required: true
+    description: Rotor plus load inertia.
+
+  viscous-friction-nano-nm-s:
+    type: int
+    default: 0
+    description: Viscous friction, nNm per rad/s.
+
+  substeps:
+    type: int
+    default: 8
+    description: RK4 integration steps per PWM period.
+
+  tick-period-us:
+    type: int
+    default: 1000
+    description: |
+      Kernel timer period that drives the simulation; each expiry runs the
+      PWM cycles due since the previous one, so simulated time follows the
+      kernel clock (the period rounds up to whole kernel ticks). 0: no
+      timer, the application steps the simulation with power_stage_sim_run().
