@@ -144,6 +144,13 @@ L\,\dot i = v - R\,i - e, \qquad \dot e = \omega\,\mathbf{J}\,e, \qquad
 \mathbf J = \begin{bmatrix}0&-1\\1&0\end{bmatrix}, \qquad e = \omega\psi\,(-\sin\theta,\ \cos\theta)
 $$
 
+![Luenberger observer](docs/img/observer.svg)
+
+The model runs the motor equations in parallel with the motor. Only i can be measured, so the current
+error r drives both corrections: g_i pulls î onto i, g_e steers ê until the model explains the measured
+current. The ω̂·J feedback turns the ê integrator into an oscillator at the PLL speed, so a rotating EMF
+needs no steady correction (a plain integrator would leave ê lagging).
+
 Discretised exactly over one PWM period (v constant in the stationary frame, as the inverter applies it;
 e taken at mid-period). Each step predicts and then corrects with the prediction error r:
 
@@ -165,6 +172,11 @@ $$
 \varepsilon = \frac{-\hat e_d\,\operatorname{sign}(\hat\omega)}{\max(|\hat e|, e_{min})} \approx \sin(\theta-\hat\theta)
 \;\xrightarrow{\text{PI}}\; \hat\omega \;\xrightarrow{\int}\; \hat\theta
 $$
+
+![Back-EMF PLL](docs/img/pll.svg)
+
+The PLL is a virtual rotor (∫ω̂ → θ̂) that a PI steers until ê lies on its q axis (ê_d = 0, as for the
+real EMF e = ωψ along q).
 
 The sign comes from the PI integrator, not from its output: Kp·ε can flip the output every step, which
 otherwise locks into a period-2 cycle. A phase detector alone pulls in slowly from a far-off or

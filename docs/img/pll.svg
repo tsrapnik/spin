@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 340" width="800" height="340" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <!-- SPDX-License-Identifier: MIT -->
+  <title>Back-EMF PLL: a virtual rotor steered by a PI so that the estimated EMF has no d component</title>
+  <style>
+    .bg { fill: #ffffff; } .fg { fill: #24292f; } .mut { fill: #57606a; } .est { fill: #9a6700; } .cort { fill: #cf222e; }
+    .ln { stroke: #24292f; stroke-width: 1.4; fill: none; }
+    .box { stroke: #24292f; stroke-width: 1.3; fill: #ffffff; }
+    .boxe { stroke: #9a6700; stroke-width: 1.3; fill: #ffffff; }
+    .boxc { stroke: #cf222e; stroke-width: 1.3; fill: #ffffff; }
+    .mdl { stroke-dasharray: 2 3; }
+    .ah { fill: #24292f; } .jn { fill: #24292f; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; } .fg { fill: #e6edf3; } .mut { fill: #8b949e; } .est { fill: #d29922; } .cort { fill: #ff7b72; }
+      .ln { stroke: #e6edf3; } .box { stroke: #e6edf3; fill: #0d1117; }
+      .boxe { stroke: #d29922; fill: #0d1117; } .boxc { stroke: #ff7b72; fill: #0d1117; }
+      .ah, .jn { fill: #e6edf3; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker>
+  </defs>
+  <rect class="bg" width="800" height="340"/>
+
+  <!-- phase detector -->
+  <text class="fg" x="14" y="105">ê_αβ</text>
+  <line class="ln" x1="50" y1="100" x2="80" y2="100" marker-end="url(#a)"/>
+  <rect class="boxe" x="80" y="80" width="80" height="40" rx="4"/>
+  <text class="est" x="120" y="97" text-anchor="middle">Park</text>
+  <text class="mut" x="120" y="112" text-anchor="middle" font-size="10">at θ̂</text>
+  <line class="ln" x1="160" y1="100" x2="200" y2="100" marker-end="url(#a)"/>
+  <text class="fg" x="168" y="93" font-size="11">ê_dq</text>
+  <circle class="jn" cx="180" cy="100" r="2.5"/>
+  <rect class="box" x="200" y="80" width="140" height="40" rx="4"/>
+  <text class="fg" x="270" y="97" text-anchor="middle">−ê_d / max(|ê|, e_min)</text>
+  <text class="mut" x="270" y="112" text-anchor="middle" font-size="10">≈ sin(θ − θ̂) · sign ω</text>
+  <line class="ln" x1="340" y1="100" x2="358" y2="100" marker-end="url(#a)"/>
+  <circle class="box" cx="370" cy="100" r="12"/>
+  <text class="fg" x="370" y="105" text-anchor="middle">×</text>
+  <line class="ln" x1="382" y1="100" x2="450" y2="100" marker-end="url(#a)"/>
+  <text class="fg" x="400" y="93">ε</text>
+  <text class="mut" x="400" y="125" font-size="10">≈ sin(θ − θ̂)</text>
+
+  <!-- PI -->
+  <circle class="jn" cx="425" cy="100" r="2.5"/>
+  <path class="ln" d="M425 100 V55 H450" marker-end="url(#a)"/>
+  <rect class="boxc" x="450" y="40" width="60" height="30" rx="4"/>
+  <text class="cort" x="480" y="60" text-anchor="middle">K_p</text>
+  <rect class="boxc" x="450" y="85" width="60" height="30" rx="4"/>
+  <text class="cort" x="480" y="105" text-anchor="middle">K_i</text>
+  <line class="ln" x1="510" y1="100" x2="548" y2="100" marker-end="url(#a)"/>
+  <circle class="box" cx="560" cy="100" r="12"/>
+  <text class="fg" x="560" y="105" text-anchor="middle">Σ</text>
+  <text class="fg" x="538" y="92" font-size="11">+</text>
+  <text class="fg" x="566" y="128" font-size="11">+</text>
+  <line class="ln" x1="572" y1="100" x2="600" y2="100" marker-end="url(#a)"/>
+  <rect class="boxc" x="600" y="82" width="50" height="36" rx="4"/>
+  <text class="cort" x="625" y="106" text-anchor="middle">∫</text>
+  <line class="ln" x1="650" y1="100" x2="708" y2="100" marker-end="url(#a)"/>
+  <path class="ln" d="M510 55 H720 V88" marker-end="url(#a)"/>
+  <circle class="box" cx="720" cy="100" r="12"/>
+  <text class="fg" x="720" y="105" text-anchor="middle">Σ</text>
+  <text class="fg" x="726" y="82" font-size="11">+</text>
+  <text class="fg" x="698" y="92" font-size="11">+</text>
+  <text class="mut" x="704" y="128" font-size="10">clamp ±ω_max</text>
+
+  <!-- direction from the integrator -->
+  <circle class="jn" cx="675" cy="100" r="2.5"/>
+  <path class="ln mdl" d="M675 100 V185 H450" marker-end="url(#a)"/>
+  <rect class="box" x="390" y="170" width="60" height="30" rx="4"/>
+  <text class="fg" x="420" y="190" text-anchor="middle">sign</text>
+  <path class="ln mdl" d="M390 185 H370 V112" marker-end="url(#a)"/>
+
+  <!-- frequency aid -->
+  <path class="ln" d="M180 100 V240 H210" marker-end="url(#a)"/>
+  <rect class="box" x="210" y="220" width="200" height="40" rx="4"/>
+  <text class="fg" x="310" y="237" text-anchor="middle">frequency detector</text>
+  <text class="mut" x="310" y="252" text-anchor="middle" font-size="10">(ê_prev × ê) / (|ê|² T_s) ≈ ω − ω̂</text>
+  <line class="ln" x1="410" y1="240" x2="460" y2="240" marker-end="url(#a)"/>
+  <rect class="boxc" x="460" y="225" width="60" height="30" rx="4"/>
+  <text class="cort" x="490" y="245" text-anchor="middle">k_f</text>
+  <path class="ln" d="M520 240 H560 V191 a6 6 0 0 0 0 -12 V112" marker-end="url(#a)"/>
+
+  <!-- virtual rotor -->
+  <path class="ln" d="M732 100 H770 V290 H660" marker-end="url(#a)"/>
+  <text class="est" x="776" y="200">ω̂</text>
+  <rect class="boxe" x="600" y="272" width="60" height="36" rx="4"/>
+  <text class="est" x="630" y="296" text-anchor="middle">∫</text>
+  <path class="ln" d="M600 290 H120 V120" marker-end="url(#a)"/>
+  <text class="est" x="300" y="284">θ̂</text>
+  <text class="mut" x="314" y="284" font-size="10">(→ current loop; ω̂ → observer, speed loop)</text>
+
+  <!-- legend -->
+  <rect class="boxe" x="20" y="316" width="22" height="14" rx="3"/>
+  <text class="mut" x="48" y="327" font-size="11">virtual rotor</text>
+  <rect class="boxc" x="150" y="316" width="22" height="14" rx="3"/>
+  <text class="mut" x="178" y="327" font-size="11">PI + frequency aid</text>
+  <line class="ln mdl" x1="320" y1="323" x2="348" y2="323"/>
+  <text class="mut" x="354" y="327" font-size="11">direction: sign of the integrator, not of ω̂</text>
+</svg>

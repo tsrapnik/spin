@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <!-- SPDX-License-Identifier: MIT -->
+  <title>Luenberger observer: a current model in parallel with the motor, corrected by the current error</title>
+  <style>
+    .bg { fill: #ffffff; } .fg { fill: #24292f; } .mut { fill: #57606a; } .est { fill: #9a6700; } .cort { fill: #cf222e; }
+    .ln { stroke: #24292f; stroke-width: 1.4; fill: none; }
+    .box { stroke: #24292f; stroke-width: 1.3; fill: #ffffff; }
+    .boxe { stroke: #9a6700; stroke-width: 1.3; fill: #ffffff; }
+    .boxc { stroke: #cf222e; stroke-width: 1.3; fill: #ffffff; }
+    .band { fill: none; stroke: #57606a; stroke-width: 1; stroke-dasharray: 5 3; }
+    .ah { fill: #24292f; } .jn { fill: #24292f; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; } .fg { fill: #e6edf3; } .mut { fill: #8b949e; } .est { fill: #d29922; } .cort { fill: #ff7b72; }
+      .ln { stroke: #e6edf3; } .box { stroke: #e6edf3; fill: #0d1117; }
+      .boxe { stroke: #d29922; fill: #0d1117; } .boxc { stroke: #ff7b72; fill: #0d1117; }
+      .band { stroke: #8b949e; } .ah, .jn { fill: #e6edf3; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker>
+  </defs>
+  <rect class="bg" width="800" height="500"/>
+
+  <!-- bands -->
+  <rect class="band" x="100" y="12" width="520" height="126" rx="6"/>
+  <text class="mut" x="610" y="30" text-anchor="end" font-size="12">motor (plant)</text>
+  <rect class="band" x="100" y="150" width="590" height="306" rx="6"/>
+  <text class="est" x="680" y="446" text-anchor="end" font-size="12">observer (model + correction)</text>
+
+  <!-- ===== plant ===== -->
+  <text class="fg" x="22" y="65">v</text>
+  <line class="ln" x1="36" y1="60" x2="128" y2="60" marker-end="url(#a)"/>
+  <circle class="jn" cx="60" cy="60" r="2.5"/>
+  <circle class="box" cx="140" cy="60" r="12"/>
+  <text class="fg" x="140" y="65" text-anchor="middle">Σ</text>
+  <text class="fg" x="118" y="52" font-size="11">+</text>
+  <line class="ln" x1="140" y1="22" x2="140" y2="48" marker-end="url(#a)"/>
+  <text class="fg" x="148" y="30" font-size="12">e</text>
+  <text class="mut" x="158" y="30" font-size="10">(not measurable)</text>
+  <text class="fg" x="127" y="44" font-size="12">−</text>
+  <text class="fg" x="127" y="88" font-size="12">−</text>
+  <line class="ln" x1="152" y1="60" x2="185" y2="60" marker-end="url(#a)"/>
+  <rect class="box" x="185" y="42" width="60" height="36" rx="4"/>
+  <text class="fg" x="215" y="65" text-anchor="middle">1/L</text>
+  <line class="ln" x1="245" y1="60" x2="340" y2="60" marker-end="url(#a)"/>
+  <rect class="box" x="340" y="42" width="60" height="36" rx="4"/>
+  <text class="fg" x="370" y="66" text-anchor="middle">∫</text>
+  <line class="ln" x1="400" y1="60" x2="740" y2="60"/>
+  <line class="ln" x1="740" y1="60" x2="740" y2="218" marker-end="url(#a)"/>
+  <text class="fg" x="560" y="53">i</text>
+  <text class="mut" x="572" y="53" font-size="10">(measured)</text>
+  <circle class="jn" cx="440" cy="60" r="2.5"/>
+  <path class="ln" d="M440 60 V109 H315" marker-end="url(#a)"/>
+  <rect class="box" x="255" y="95" width="60" height="28" rx="4"/>
+  <text class="fg" x="285" y="114" text-anchor="middle">R</text>
+  <path class="ln" d="M255 109 H140 V72" marker-end="url(#a)"/>
+
+  <!-- ===== error ===== -->
+  <circle class="box" cx="740" cy="230" r="12"/>
+  <text class="fg" x="740" y="235" text-anchor="middle">Σ</text>
+  <text class="fg" x="748" y="212" font-size="11">+</text>
+  <text class="fg" x="748" y="257" font-size="12">−</text>
+  <line class="ln" x1="728" y1="230" x2="640" y2="230" marker-end="url(#a)"/>
+  <text class="fg" x="692" y="222" font-size="12">r = i − î</text>
+  <circle class="jn" cx="680" cy="230" r="2.5"/>
+
+  <!-- ===== back-EMF model: rotating at the PLL speed ===== -->
+  <rect class="boxc" x="580" y="212" width="60" height="36" rx="4"/>
+  <text class="cort" x="610" y="235" text-anchor="middle">g_e</text>
+  <line class="ln" x1="580" y1="230" x2="542" y2="230" marker-end="url(#a)"/>
+  <circle class="box" cx="530" cy="230" r="12"/>
+  <text class="fg" x="530" y="235" text-anchor="middle">Σ</text>
+  <text class="fg" x="548" y="222" font-size="12">−</text>
+  <text class="fg" x="537" y="210" font-size="11">+</text>
+  <line class="ln" x1="518" y1="230" x2="480" y2="230" marker-end="url(#a)"/>
+  <rect class="boxe" x="420" y="212" width="60" height="36" rx="4"/>
+  <text class="est" x="450" y="236" text-anchor="middle">∫</text>
+  <circle class="jn" cx="390" cy="230" r="2.5"/>
+  <path class="ln" d="M390 230 V185 H420" marker-end="url(#a)"/>
+  <rect class="boxe" x="420" y="167" width="60" height="36" rx="4"/>
+  <text class="est" x="450" y="183" text-anchor="middle">ω̂·J</text>
+  <text class="mut" x="450" y="197" text-anchor="middle" font-size="10">rotate 90°</text>
+  <path class="ln" d="M480 185 H530 V218" marker-end="url(#a)"/>
+  <text class="mut" x="492" y="176" font-size="10">ω̂ from PLL</text>
+  <path class="ln" d="M420 230 H140 V378" marker-end="url(#a)"/>
+  <text class="est" x="260" y="222">ê</text>
+  <text class="mut" x="272" y="222" font-size="10">(estimated back-EMF → PLL)</text>
+
+  <!-- ===== current model ===== -->
+  <path class="ln" d="M60 60 V390 H128" marker-end="url(#a)"/>
+  <circle class="box" cx="140" cy="390" r="12"/>
+  <text class="fg" x="140" y="395" text-anchor="middle">Σ</text>
+  <text class="fg" x="118" y="382" font-size="11">+</text>
+  <text class="fg" x="127" y="372" font-size="12">−</text>
+  <text class="fg" x="127" y="418" font-size="12">−</text>
+  <line class="ln" x1="152" y1="390" x2="185" y2="390" marker-end="url(#a)"/>
+  <rect class="boxe" x="185" y="372" width="60" height="36" rx="4"/>
+  <text class="est" x="215" y="395" text-anchor="middle">1/L</text>
+  <line class="ln" x1="245" y1="390" x2="288" y2="390" marker-end="url(#a)"/>
+  <circle class="box" cx="300" cy="390" r="12"/>
+  <text class="fg" x="300" y="395" text-anchor="middle">Σ</text>
+  <text class="fg" x="278" y="382" font-size="11">+</text>
+  <text class="fg" x="306" y="372" font-size="11">+</text>
+  <line class="ln" x1="312" y1="390" x2="340" y2="390" marker-end="url(#a)"/>
+  <rect class="boxe" x="340" y="372" width="60" height="36" rx="4"/>
+  <text class="est" x="370" y="396" text-anchor="middle">∫</text>
+  <path class="ln" d="M400 390 H740 V242" marker-end="url(#a)"/>
+  <text class="est" x="560" y="383">î</text>
+  <circle class="jn" cx="440" cy="390" r="2.5"/>
+  <path class="ln" d="M440 390 V434 H315" marker-end="url(#a)"/>
+  <rect class="boxe" x="255" y="420" width="60" height="28" rx="4"/>
+  <text class="est" x="285" y="439" text-anchor="middle">R</text>
+  <path class="ln" d="M255 434 H140 V402" marker-end="url(#a)"/>
+
+  <!-- current correction -->
+  <path class="ln" d="M680 230 V310 H640" marker-end="url(#a)"/>
+  <rect class="boxc" x="580" y="292" width="60" height="36" rx="4"/>
+  <text class="cort" x="610" y="315" text-anchor="middle">g_i</text>
+  <path class="ln" d="M580 310 H300 V378" marker-end="url(#a)"/>
+
+  <!-- legend -->
+  <rect class="box" x="20" y="472" width="22" height="14" rx="3"/>
+  <text class="mut" x="48" y="483" font-size="11">motor</text>
+  <rect class="boxe" x="110" y="472" width="22" height="14" rx="3"/>
+  <text class="mut" x="138" y="483" font-size="11">model (same equations, estimated states)</text>
+  <rect class="boxc" x="400" y="472" width="22" height="14" rx="3"/>
+  <text class="mut" x="428" y="483" font-size="11">correction gains</text>
+  <text class="mut" x="560" y="483" font-size="11">all signals are αβ vectors</text>
+</svg>
