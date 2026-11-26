@@ -1,0 +1,29 @@
+/* SPDX-License-Identifier: MIT */
+
+/ {
+	/* Simulated FIT1036 (estimates, docs/HARDWARE.md) on a 24 V, 20 kHz bridge. */
+	ps: power-stage {
+		compatible = "pmsm,sim-power-stage";
+		resistance-micro-ohms = <3600000>;
+		inductance-nano-henries = <1500000>;
+		flux-linkage-micro-webers = <11000>;
+		pole-pairs = <11>;
+		inertia-nano-kg-m2 = <6000>;
+	};
+
+	motor0: motor {
+		compatible = "pmsm,motor";
+		power-stage = <&ps>;
+		resistance-micro-ohms = <3600000>;
+		inductance-nano-henries = <1500000>;
+		flux-linkage-micro-webers = <11000>;
+		pole-pairs = <11>;
+		inertia-nano-kg-m2 = <6000>;
+		max-current-milliamps = <1400>;
+		start-current-milliamps = <1000>;
+		trip-current-milliamps = <3000>;
+		vbus-min-millivolts = <10000>;
+		vbus-max-millivolts = <30000>;
+		max-speed-rpm = <950>;
+	};
+};

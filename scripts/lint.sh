@@ -10,7 +10,7 @@
 #   checkpatch  zephyr/scripts/checkpatch.pl with Zephyr's .checkpatch.conf
 #   sca         GCC -fanalyzer (ZEPHYR_SCA_VARIANT=gcc) on the nucleo_c542rc build; only findings
 #               in this module fail (Zephyr and the HAL have their own)
-#   tests       twister on native_sim, native_sim/native/64 (ASan + UBSan) and nucleo_c542rc
+#   tests       twister (tests/ and samples/) on native_sim, native_sim/native/64 (ASan + UBSan) and nucleo_c542rc
 #
 # Build output goes to $LINT_OUT (default: ${TMPDIR:-/tmp}/spin-lint), never into the repo.
 # Exits non-zero if any step fails.
@@ -65,7 +65,7 @@ step_sca() {
 }
 
 step_tests() {
-	(cd "$TOP" && west twister -T "$SPIN/tests" -p native_sim -p native_sim/native/64 \
+	(cd "$TOP" && west twister -T "$SPIN/tests" -T "$SPIN/samples" -p native_sim -p native_sim/native/64 \
 		-p nucleo_c542rc -O "$OUT/twister" --inline-logs)
 }
 

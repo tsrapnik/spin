@@ -116,13 +116,13 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 - [x] M4.1 Power-stage API header + `pmsm,sim-power-stage` driver (wraps the plant)
 - [x] M4.2 `pmsm,motor` binding + device, motor thread, cmd/status exchange; `tests/motor` (API, faults, offsets)
 - [x] M4.3 Shell: `motor start|stop|speed <rpm>|status`
-- [ ] M4.4 `samples/motor_basic` on native_sim; extend `tests/motor` (shell)
+- [x] M4.4 `samples/motor_basic` on native_sim; extend `tests/motor` (shell)
 
 ### M5 STM32 power stage
 - [ ] M5.1 TIM1 PWM, verify on scope without motor (frequency, dead-time, center alignment)
 - [ ] M5.2 ADC injected trigger + sampling point + duty→sample delay on scope; offset calibration
 - [ ] M5.3 BRK input
-- [ ] M5.4 Align at low current with current-limited PSU → I/f → closed loop
+- [ ] M5.4 Align at low current with current-limited PSU → I/f → closed loop; `samples/motor_basic/boards/nucleo_c542rc.overlay`
 - [ ] M5.5 ISR timing (DWT cycle counter / GPIO) < 50 % of PWM period at 20 kHz
 
 ### M6 Docs
@@ -366,3 +366,14 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 - Checked in a scratch app (dummy shell backend, ASan + UBSan on native_sim/native/64; ARM build warning-free):
   start 500 → RUN at 500.0 rpm, speed 700, stop, `-EBUSY` right after stop, reverse start −400, error paths.
   The committed shell test is M4.4. In STOP, `status` still shows the last ref/target (as `motor_status`).
+- 2026-11-26 (M4.4): `samples/motor_basic` — `main()` only reports readiness, the shell does the rest.
+  `boards/native_sim.{overlay,conf}` put the motor on `pmsm,sim-power-stage` (timer-driven, real-time slowed) and
+  raise the tick rate; run with `-uart_stdinout` to type at the shell on stdin/stdout. `sample.yaml` runs it on
+  native_sim with a console regex on the ready line; `lint.sh` and the documented twister command now pass
+  `-T spin/samples`. The nucleo_c542rc overlay waits for the STM32 power stage (moved to M5.4).
+- `tests/motor` gets the shell (dummy backend, so every scenario incl. the nucleo build compiles
+  `motor_shell.c`) and a `motor_shell` suite in `src/test_shell.c`; helpers shared with `test_motor.c` moved to
+  `src/common.{c,h}`. It checks commands against the API and the plant (500/700/−400 rpm reached, named device),
+  the start error messages (`-EALREADY`, `-EBUSY`, `-EIO`, `-ERANGE`), fault display (`0x8 break`) and cleared
+  after stop, and rejection of missing/garbled/fractional/out-of-range speeds, non-motor devices (`ps`) and
+  extra arguments. The suite's setup waits for the dummy backend to become active (the shell thread initialises it).

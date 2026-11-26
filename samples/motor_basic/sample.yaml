@@ -1,0 +1,18 @@
+sample:
+  name: PMSM motor shell
+  description: Sensorless FOC motor commanded from the shell
+common:
+  tags:
+    - pmsm
+    - motor
+tests:
+  pmsm.sample.motor_basic:
+    platform_allow:
+      - native_sim
+    integration_platforms:
+      - native_sim
+    harness: console
+    harness_config:
+      type: one_line
+      regex:
+        - "motor ready: try 'motor start 500'"

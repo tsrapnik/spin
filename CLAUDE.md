@@ -25,9 +25,9 @@ from `/workdir`. The devcontainer (`.devcontainer/`) sets this up; `post-create.
 # before committing: clang-format, checkpatch, GCC analyzer, all tests (incl. ASan/UBSan)
 LINT_OUT=<outdir> spin/scripts/lint.sh          # --fix reformats; step names run a subset
 
-# all tests: native_sim runs them, native_sim/native/64 runs them under ASan + UBSan,
+# all tests + samples: native_sim runs them, native_sim/native/64 runs them under ASan + UBSan,
 # nucleo_c542rc is build-only (catches ARM warnings)
-west twister -T spin/tests -p native_sim -p native_sim/native/64 -p nucleo_c542rc -O <outdir>
+west twister -T spin/tests -T spin/samples -p native_sim -p native_sim/native/64 -p nucleo_c542rc -O <outdir>
 
 # one scenario
 west twister -T spin/tests/lib/foc -p native_sim -s pmsm.lib.foc
@@ -60,8 +60,9 @@ Layers (see the module layout and power-stage API in `docs/PLAN.md`):
    `dts/bindings/motor/pmsm,motor.yaml`) — `pmsm,motor` device: `foc_cycle_step` in the power-stage
    callback (no kernel calls), `foc_seq_step` in a motor thread every `CONFIG_PMSM_MOTOR_PERIOD_US`
    (must be whole kernel ticks: native_sim needs `CONFIG_SYS_CLOCK_TICKS_PER_SEC` raised). Single-writer
-   `cmd`/`status` double buffers switched by an atomic counter. Tests: `tests/motor` (timer-driven sim
-   power stage, simulated kernel time).
+   `cmd`/`status` double buffers switched by an atomic counter. Shell commands in `motor_shell.c`
+   (`CONFIG_PMSM_MOTOR_SHELL`). Tests: `tests/motor` (timer-driven sim power stage, simulated kernel
+   time; `test_shell.c` via the dummy shell backend). Sample: `samples/motor_basic` (shell, native_sim).
 3. **Power-stage driver class** (`include/pmsm/power_stage.h`, `drivers/power_stage/`,
    `CONFIG_PMSM_POWER_STAGE`) — the only per-MCU part: synchronised PWM + current/Vbus sampling, one
    callback per PWM cycle in ISR context, BRK reported in the sample flags. Deliberately not Zephyr's

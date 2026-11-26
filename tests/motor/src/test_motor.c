@@ -12,73 +12,7 @@
 #include <pmsm/plant.h>
 #include <pmsm/power_stage_sim.h>
 
-static const struct device *const motor = DEVICE_DT_GET(DT_NODELABEL(motor0));
-static const struct device *const ps = DEVICE_DT_GET(DT_NODELABEL(ps));
-
-/* As app.overlay. */
-static const struct plant_params plant_prm = {
-	.rs = 3.6f,
-	.ls = 1.5e-3f,
-	.psi = 0.011f,
-	.pole_pairs = 11U,
-	.j = 6e-6f,
-	.b = 0.0f,
-	.vbus = 24.0f,
-	.ts = 50e-6f,
-	.duty_delay = 1U,
-	.substeps = 8U,
-};
-
-static struct motor_status status(void)
-{
-	struct motor_status st;
-
-	zassert_ok(motor_get_status(motor, &st));
-	return st;
-}
-
-/* Wait up to \p ms for \p state; returns whether it was reached. */
-static bool wait_state(enum foc_state state, unsigned int ms)
-{
-	for (unsigned int t = 0; t <= ms; t++) {
-		if (status().state == state) {
-			return true;
-		}
-		k_msleep(1);
-	}
-	return false;
-}
-
-static struct plant plant_get(void)
-{
-	k_spinlock_key_t key;
-	struct plant p = *power_stage_sim_lock(ps, &key);
-
-	power_stage_sim_unlock(ps, key);
-	return p;
-}
-
-/* Rotor back to standstill at angle 0. */
-static void plant_reset(void)
-{
-	k_spinlock_key_t key;
-	int ret = plant_init(power_stage_sim_lock(ps, &key), &plant_prm);
-
-	power_stage_sim_unlock(ps, key);
-	zassert_ok(ret);
-}
-
-static void before(void *f)
-{
-	ARG_UNUSED(f);
-	zassert_true(device_is_ready(motor));
-	zassert_ok(motor_stop(motor));
-	zassert_true(wait_state(FOC_STATE_STOP, 5));
-	k_msleep(2); /* Controller in STOP too. */
-	power_stage_sim_brk(ps, false);
-	power_stage_sim_set_offset(ps, 0.0f, 0.0f, 0.0f);
-	plant_reset();
-}
+#include "common.h"
 
 ZTEST(motor, test_start_run_speed)
 {
@@ -206,4 +140,4 @@ ZTEST(motor, test_bad_args)
 	zassert_equal(status().state, FOC_STATE_STOP);
 }
 
-ZTEST_SUITE(motor, NULL, NULL, before, NULL, NULL);
+ZTEST_SUITE(motor, NULL, NULL, motor_test_before, NULL, NULL);

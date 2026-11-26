@@ -206,11 +206,12 @@ flowchart TB
 
 ```sh
 # from the west topdir (/workdir)
-west twister -T spin/tests -p native_sim -p native_sim/native/64 -p nucleo_c542rc -O <outdir>
+west twister -T spin/tests -T spin/samples -p native_sim -p native_sim/native/64 -p nucleo_c542rc -O <outdir>
 LINT_OUT=<outdir> spin/scripts/lint.sh     # format, checkpatch, GCC analyzer, tests (+ ASan/UBSan)
 ```
 
 With `CONFIG_SHELL=y` the motor device adds `motor start <rpm>`, `motor speed <rpm>`, `motor stop` and
-`motor status` (optional device name last; speeds in mechanical rpm, the sign is the direction).
+`motor status` (optional device name last; speeds in mechanical rpm, the sign is the direction). Try it in
+`samples/motor_basic` on native_sim.
 
 License: MIT.
