@@ -8,6 +8,8 @@
 #include <float.h>
 #include <limits.h>
 #include <math.h>
+#include <stddef.h>
+#include <string.h>
 #include <zephyr/ztest.h>
 #include <pmsm/foc.h>
 
@@ -608,6 +610,243 @@ ZTEST(foc_nonfinite, test_duty_hist_init)
 	zassert_equal(h.delay, FOC_DUTY_DELAY_MAX);
 	foc_duty_hist_push(&h, (struct foc_abc){0.1f, 0.2f, 0.3f});
 	zassert_equal(foc_duty_hist_applied(&h).a, 0.5f);
+}
+
+static const struct foc_cycle_cfg cyc_cfg = {
+	.ts = 50e-6f,
+	.rs = 3.6f,
+	.ls = 1.5e-3f,
+	.max_duty = 0.95f,
+	.t_adv = 75e-6f,
+	.delay = 1U,
+	.bw_current_hz = 500.0f,
+	.bw_obs_hz = 2000.0f,
+	.bw_pll_hz = 150.0f,
+	.w_max = 3000.0f,
+	.e_min = 0.1f,
+	.i_trip = 3.0f,
+	.vbus_min = 10.0f,
+	.vbus_max = 30.0f,
+};
+
+/* Float fields of foc_cycle_cfg, by offset. */
+static const size_t cyc_fields[] = {
+	offsetof(struct foc_cycle_cfg, ts),        offsetof(struct foc_cycle_cfg, rs),
+	offsetof(struct foc_cycle_cfg, ls),        offsetof(struct foc_cycle_cfg, max_duty),
+	offsetof(struct foc_cycle_cfg, t_adv),     offsetof(struct foc_cycle_cfg, bw_current_hz),
+	offsetof(struct foc_cycle_cfg, bw_obs_hz), offsetof(struct foc_cycle_cfg, bw_pll_hz),
+	offsetof(struct foc_cycle_cfg, w_max),     offsetof(struct foc_cycle_cfg, e_min),
+	offsetof(struct foc_cycle_cfg, i_trip),    offsetof(struct foc_cycle_cfg, vbus_min),
+	offsetof(struct foc_cycle_cfg, vbus_max),
+};
+
+static void set_field(void *cfg, size_t off, float x)
+{
+	memcpy((char *)cfg + off, &x, sizeof(x));
+}
+
+static bool duty_ok(struct foc_abc d)
+{
+	return in_range(d.a, 0.0f, 1.0f) && in_range(d.b, 0.0f, 1.0f) && in_range(d.c, 0.0f, 1.0f);
+}
+
+/* Everything but the measurements (i, vbus) is finite. */
+static bool status_ok(const struct foc_status *st)
+{
+	return (unsigned int)st->state <= (unsigned int)FOC_STATE_FAULT &&
+	       in_range(st->theta, -FOC_PI_F, FOC_PI_F) && isfinite(st->omega) &&
+	       in_range(st->delta, -FOC_PI_F, FOC_PI_F) && in_range(st->e_mag, 0.0f, FLT_MAX) &&
+	       isfinite(st->v.d) && isfinite(st->v.q);
+}
+
+/* Run through ALIGN, IF (held and free) and RUN on plausible inputs. */
+static void cycle_drive(struct foc_cycle *c, const char *what, double x)
+{
+	const struct foc_cmd cmds[] = {
+		{.state = FOC_STATE_ALIGN, .i_ref = {.d = 1.0f}, .pll_hold = 1U},
+		{.state = FOC_STATE_IF, .i_ref = {.d = 1.0f}, .w_forced = 300.0f, .pll_hold = 1U},
+		{.state = FOC_STATE_IF, .i_ref = {.d = 1.0f}, .w_forced = 300.0f},
+		{.state = FOC_STATE_RUN, .i_ref = {.q = 0.5f}},
+		{.state = FOC_STATE_STOP},
+	};
+	struct foc_status st;
+
+	for (size_t k = 0; k < ARRAY_SIZE(cmds); k++) {
+		for (int n = 0; n < 3; n++) {
+			struct foc_abc d = foc_cycle_step(
+				c, &cmds[k], (struct foc_abc){0.5f, -0.2f, -0.3f}, 24.0f, &st);
+
+			zassert_true(duty_ok(d) && status_ok(&st), "%s %e cmd %zu", what, x, k);
+		}
+	}
+}
+
+/* Each float setting bad in turn, then all at once. */
+ZTEST(foc_nonfinite, test_cycle_init)
+{
+	for (size_t i = 0; i < N_BAD; i++) {
+		for (size_t k = 0; k <= ARRAY_SIZE(cyc_fields); k++) {
+			struct foc_cycle_cfg cfg = cyc_cfg;
+			struct foc_cycle c;
+
+			for (size_t n = 0; n < ARRAY_SIZE(cyc_fields); n++) {
+				if (n == k || k == ARRAY_SIZE(cyc_fields)) {
+					set_field(&cfg, cyc_fields[n], bad[i]);
+				}
+			}
+			cfg.delay = (k == ARRAY_SIZE(cyc_fields)) ? UINT_MAX : cfg.delay;
+			foc_cycle_init(&c, &cfg);
+			zassert_true(in_range(c.i_trip, 0.0f, FLT_MAX) &&
+					     in_range(c.vbus_min, 0.0f, FLT_MAX) &&
+					     in_range(c.vbus_max, 0.0f, FLT_MAX) &&
+					     in_range(c.w_max, 0.0f, FLT_MAX) &&
+					     in_range(c.ts, 0.0f, FLT_MAX),
+				     "x %e field %zu", (double)bad[i], k);
+			cycle_drive(&c, "field", (double)k);
+		}
+	}
+}
+
+/* Each step input bad in turn (currents, vbus, command), then all at once. */
+ZTEST(foc_nonfinite, test_cycle_step)
+{
+	const enum foc_state states[] = {FOC_STATE_ALIGN, FOC_STATE_IF, FOC_STATE_RUN};
+
+	for (size_t i = 0; i < N_BAD; i++) {
+		float x = bad[i];
+
+		for (size_t s = 0; s < ARRAY_SIZE(states); s++) {
+			for (int k = 0; k <= 7; k++) {
+				struct foc_cmd cmd = {.state = states[s],
+						      .i_ref = {.d = 1.0f, .q = 0.5f},
+						      .w_forced = 300.0f};
+				struct foc_abc i = {0.5f, -0.2f, -0.3f};
+				float vbus = 24.0f;
+				struct foc_cycle c;
+				struct foc_status st;
+
+				foc_cycle_init(&c, &cyc_cfg);
+				(void)foc_cycle_step(&c, &cmd, i, vbus, &st);
+				i.a = (k == 0 || k == 7) ? x : i.a;
+				i.b = (k == 1 || k == 7) ? x : i.b;
+				i.c = (k == 2 || k == 7) ? x : i.c;
+				vbus = (k == 3 || k == 7) ? x : vbus;
+				cmd.i_ref.d = (k == 4 || k == 7) ? x : cmd.i_ref.d;
+				cmd.i_ref.q = (k == 5 || k == 7) ? x : cmd.i_ref.q;
+				cmd.w_forced = (k == 6 || k == 7) ? x : cmd.w_forced;
+				for (int n = 0; n < 5; n++) {
+					struct foc_abc d = foc_cycle_step(&c, &cmd, i, vbus, &st);
+
+					zassert_true(duty_ok(d) && status_ok(&st),
+						     "x %e state %d input %d", (double)x, states[s],
+						     k);
+				}
+				/* A non-finite measurement always trips. */
+				if (k <= 3 && !isfinite(x)) {
+					zassert_equal(st.state, FOC_STATE_FAULT, "x %e input %d",
+						      (double)x, k);
+				}
+			}
+		}
+	}
+}
+
+static const struct foc_seq_cfg seq_cfg = {
+	.ts = 1e-3f,
+	.pole_pairs = 11U,
+	.j = 6e-6f,
+	.psi = 0.011f,
+	.bw_speed_hz = 50.0f,
+	.i_max = 1.4f,
+	.i_start = 1.0f,
+	.t_align = 0.1f,
+	.accel_start = 300.0f,
+	.w_handover = 30.0f,
+	.accel = 500.0f,
+	.w_max = 100.0f,
+};
+
+static const size_t seq_fields[] = {
+	offsetof(struct foc_seq_cfg, ts),         offsetof(struct foc_seq_cfg, j),
+	offsetof(struct foc_seq_cfg, psi),        offsetof(struct foc_seq_cfg, bw_speed_hz),
+	offsetof(struct foc_seq_cfg, i_max),      offsetof(struct foc_seq_cfg, i_start),
+	offsetof(struct foc_seq_cfg, t_align),    offsetof(struct foc_seq_cfg, accel_start),
+	offsetof(struct foc_seq_cfg, w_handover), offsetof(struct foc_seq_cfg, accel),
+	offsetof(struct foc_seq_cfg, w_max),
+};
+
+static bool cmd_ok(const struct foc_cmd *c)
+{
+	return (unsigned int)c->state <= (unsigned int)FOC_STATE_FAULT && isfinite(c->i_ref.d) &&
+	       isfinite(c->i_ref.q) && isfinite(c->w_forced);
+}
+
+/* Through every state with a status that follows the command. */
+static void seq_drive(struct foc_seq *s, struct foc_status st, const char *what, double x)
+{
+	foc_seq_start(s, 50.0f);
+	for (int k = 0; k < 400; k++) {
+		const struct foc_cmd *c = foc_seq_step(s, &st);
+
+		zassert_true(cmd_ok(c) && isfinite(s->w_ref) && isfinite(s->speed.integ),
+			     "%s %e step %d", what, x, k);
+		st.state = (c->state == FOC_STATE_FAULT) ? FOC_STATE_STOP : c->state;
+	}
+	foc_seq_stop(s);
+	zassert_true(cmd_ok(foc_seq_step(s, &st)));
+}
+
+ZTEST(foc_nonfinite, test_seq_init)
+{
+	for (size_t i = 0; i < N_BAD; i++) {
+		for (size_t k = 0; k <= ARRAY_SIZE(seq_fields); k++) {
+			struct foc_seq_cfg cfg = seq_cfg;
+			struct foc_seq s;
+
+			for (size_t n = 0; n < ARRAY_SIZE(seq_fields); n++) {
+				if (n == k || k == ARRAY_SIZE(seq_fields)) {
+					set_field(&cfg, seq_fields[n], bad[i]);
+				}
+			}
+			foc_seq_init(&s, &cfg);
+			zassert_true(s.w_handover <= s.w_max, "x %e field %zu", (double)bad[i], k);
+			seq_drive(&s, (struct foc_status){.omega = 330.0f}, "field", (double)k);
+		}
+	}
+	/* Zero pole pairs. */
+	struct foc_seq_cfg cfg = seq_cfg;
+	struct foc_seq s;
+
+	cfg.pole_pairs = 0U;
+	foc_seq_init(&s, &cfg);
+	seq_drive(&s, (struct foc_status){0}, "pp", 0.0);
+}
+
+/* Bad start/set_speed arguments and bad status fields, each alone and all at once. */
+ZTEST(foc_nonfinite, test_seq_step)
+{
+	for (size_t i = 0; i < N_BAD; i++) {
+		float x = bad[i];
+		struct foc_seq s;
+
+		foc_seq_init(&s, &seq_cfg);
+		foc_seq_start(&s, x);
+		zassert_true(in_range(s.target, -seq_cfg.w_max, seq_cfg.w_max));
+		foc_seq_set_speed(&s, x);
+		zassert_true(in_range(s.target, -seq_cfg.w_max, seq_cfg.w_max));
+		seq_drive(&s, (struct foc_status){0}, "w", (double)x);
+
+		for (int k = 0; k <= 3; k++) {
+			struct foc_status st = {
+				.theta = (k == 0 || k == 3) ? x : 0.0f,
+				.omega = (k == 1 || k == 3) ? x : 330.0f,
+				.delta = (k == 2 || k == 3) ? x : 0.2f,
+			};
+
+			foc_seq_init(&s, &seq_cfg);
+			seq_drive(&s, st, "status", (double)x);
+		}
+	}
 }
 
 ZTEST_SUITE(foc_nonfinite, NULL, NULL, NULL, NULL, NULL);

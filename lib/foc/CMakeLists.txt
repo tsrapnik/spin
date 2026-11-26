@@ -9,4 +9,6 @@ zephyr_library_sources(
   foc.c
   observer.c
   pll.c
+  cycle.c
+  seq.c
 )

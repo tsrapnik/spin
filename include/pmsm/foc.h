@@ -624,6 +624,240 @@ void foc_pll_reset(struct foc_pll *p, float theta, float omega);
  */
 void foc_pll_step(struct foc_pll *p, struct foc_ab e);
 
+/**
+ * \brief Drive state, shared by the per-cycle controller and the sequencer.
+ *
+ * STOP: PWM off. ALIGN: current on d at the forced angle 0. IF: current on
+ * d at a forced angle ramped open loop (I/f), observer and PLL acquiring.
+ * RUN: observer angle, speed loop closed. FAULT: PWM off, latched until a
+ * STOP command.
+ */
+enum foc_state {
+	FOC_STATE_STOP = 0,
+	FOC_STATE_ALIGN,
+	FOC_STATE_IF,
+	FOC_STATE_RUN,
+	FOC_STATE_FAULT,
+};
+
+/**
+ * \name Fault bits of foc_status.faults
+ * \{
+ */
+#define FOC_FAULT_OC  0x1U /**< A phase current beyond the trip level (or NaN). */
+#define FOC_FAULT_OV  0x2U /**< Bus voltage above the maximum (or NaN). */
+#define FOC_FAULT_UV  0x4U /**< Bus voltage below the minimum (or NaN). */
+#define FOC_FAULT_EXT 0x8U /**< Raised by the caller, e.g. the hardware break input. */
+/** \} */
+
+/**
+ * \brief Command from the sequencer (thread) to the per-cycle controller
+ *        (ISR). Written only by foc_seq_step().
+ */
+struct foc_cmd {
+	enum foc_state state; /**< Requested state; FAULT means PWM off. */
+	struct foc_dq i_ref;  /**< Current reference, A, in the control frame. */
+	float w_forced;       /**< Forced-angle speed (ALIGN, IF), rad/s electrical. */
+	/** In IF: the PLL follows the forced angle instead of the observer. */
+	unsigned char pll_hold;
+};
+
+/**
+ * \brief Status from the per-cycle controller (ISR) to the sequencer
+ *        (thread). Written only by foc_cycle_step(); always finite except
+ *        \p i and \p vbus, which are the measurements as they came.
+ */
+struct foc_status {
+	enum foc_state state; /**< State the controller is in. */
+	unsigned int faults;  /**< FOC_FAULT_* bits latched since the last STOP. */
+	float theta;          /**< PLL angle, rad electrical, wrapped. */
+	float omega;          /**< PLL speed, rad/s electrical. */
+	/** Forced angle minus PLL angle, wrapped: the rotor lag in I/f; 0 in RUN. */
+	float delta;
+	float e_mag;      /**< Back-EMF estimate magnitude, V. */
+	struct foc_dq i;  /**< Measured current in the control frame, A. */
+	struct foc_dq v;  /**< Voltage command in the control frame, V. */
+	float vbus;       /**< Measured bus voltage, V. */
+	unsigned int seq; /**< Incremented on every step. */
+};
+
+/**
+ * \brief Settings of the per-cycle controller, in SI units and electrical
+ *        radians.
+ */
+struct foc_cycle_cfg {
+	float ts;            /**< PWM period, s. */
+	float rs;            /**< Phase resistance, ohm. */
+	float ls;            /**< Phase inductance, H. */
+	float max_duty;      /**< See foc_svpwm(). */
+	float t_adv;         /**< Angle advance, s (#FOC_ADVANCE_PERIODS * ts). */
+	unsigned int delay;  /**< Duty-to-sample delay, periods, see foc_duty_hist. */
+	float bw_current_hz; /**< Current-loop bandwidth. */
+	float bw_obs_hz;     /**< Observer bandwidth. */
+	float bw_pll_hz;     /**< PLL natural frequency. */
+	float w_max;         /**< PLL and forced speed limit, rad/s electrical. */
+	float e_min;         /**< PLL gain fall-off below this EMF, V. */
+	float i_trip;        /**< Over-current trip level, A (peak phase). */
+	float vbus_min;      /**< Under-voltage trip level, V. */
+	float vbus_max;      /**< Over-voltage trip level, V. */
+};
+
+/**
+ * \brief Per-PWM-cycle controller, run in the ADC interrupt.
+ *
+ * Owns everything that happens every cycle: fault checks, forced-angle
+ * integration, observer + PLL, angle selection and the current loop. It
+ * follows foc_cmd.state with these rules:
+ *
+ * - Leaving STOP resets the current loop, observer, PLL, duty history and
+ *   the forced angle (to 0).
+ * - In ALIGN, IF and RUN, the per-cycle checks run first. Any fault bit
+ *   enters FAULT at once and the step returns zero voltage.
+ * - FAULT is left only on a STOP command, which clears the fault bits.
+ * - Entering RUN (the handover) rotates the current-PI integrators from the
+ *   forced to the PLL frame, so the voltage vector does not jump.
+ *
+ * The observer runs in ALIGN, IF and RUN on the applied duty, the PLL
+ * follows the forced angle while foc_cmd.pll_hold is set in ALIGN and IF.
+ */
+struct foc_cycle {
+	struct foc_current cur;
+	struct foc_obs obs;
+	struct foc_pll pll;
+	struct foc_duty_hist hist;
+	float ts;
+	float w_max;
+	float i_trip, vbus_min, vbus_max;
+	float theta_f;           /**< Forced angle, rad electrical, wrapped. */
+	enum foc_state state;    /**< Current state. */
+	unsigned int faults;     /**< Latched fault bits. */
+	unsigned int ext;        /**< Pending bits from foc_cycle_trip(). */
+	unsigned int cfg_faults; /**< Bits raised on every active cycle (bad settings). */
+	unsigned int seq;        /**< Step counter. */
+};
+
+/**
+ * \brief Compute gains and limits; start in STOP.
+ *
+ * Non-finite or out-of-range settings make the controller fail safe: a bad
+ * \p i_trip, \p vbus_min or \p vbus_max trips on the first active cycle,
+ * other settings are handled as in foc_current_init(), foc_obs_init() and
+ * foc_pll_init().
+ */
+void foc_cycle_init(struct foc_cycle *c, const struct foc_cycle_cfg *cfg);
+
+/**
+ * \brief Run one PWM cycle.
+ *
+ * \param cmd Latest command; a state outside enum foc_state counts as STOP.
+ *        References are clamped (current to +-i_trip, forced speed to
+ *        +-w_max); NaN counts as 0.
+ * \param i_abc Measured phase currents, A.
+ * \param vbus Measured bus voltage, V.
+ * \param st Filled with the status after this step.
+ * \return Duties for the next period, in [1 - max_duty, max_duty]; 0.5 on
+ *         all phases in STOP and FAULT. The caller switches the PWM off
+ *         when st->state is STOP or FAULT.
+ */
+struct foc_abc foc_cycle_step(struct foc_cycle *c, const struct foc_cmd *cmd, struct foc_abc i_abc,
+			      float vbus, struct foc_status *st);
+
+/**
+ * \brief Raise fault bits from outside, e.g. the hardware break interrupt.
+ *
+ * Takes effect at the next foc_cycle_step(), in the same context as that
+ * call (no locking).
+ */
+FOC_INLINE void foc_cycle_trip(struct foc_cycle *c, unsigned int bits)
+{
+	c->ext |= bits;
+}
+
+/**
+ * \brief Startup and speed sequencer, run in the motor thread.
+ *
+ * STOP --start--> ALIGN --t_align--> IF --|w| >= w_handover--> RUN, and
+ * back to STOP on stop. A FAULT seen in the status latches until stop.
+ *
+ * - ALIGN: d current ramps 0 -> i_start over the first half of t_align,
+ *   then holds, at the forced angle 0.
+ * - IF: the forced speed ramps at accel_start in the start direction with
+ *   i_start on d. The rotor lags the current vector by delta, with
+ *   Kt i_start sin(delta) = load torque. The PLL follows the forced angle
+ *   below w_handover / 2, then runs on the observer to lock before the
+ *   switch.
+ * - Handover at w_handover: the speed PI integrator is preloaded with the
+ *   torque-producing part i_start sin(delta), the speed reference starts
+ *   at the forced speed and d goes to 0.
+ * - RUN: the speed reference ramps at accel towards the target; the speed
+ *   PI sets i_q within +-i_max.
+ *
+ * Speeds here are mechanical rad/s. The direction is fixed at start: a
+ * target of the other sign, or below w_handover, runs at w_handover
+ * (reversal needs stop and start). The target is clamped to +-w_max.
+ */
+struct foc_seq_cfg {
+	float ts;                /**< Step period, s. */
+	unsigned int pole_pairs; /**< Number of pole pairs. */
+	float j;                 /**< Inertia, kg*m^2 (speed-PI gains). */
+	float psi;               /**< Flux linkage, Wb (speed-PI gains). */
+	float bw_speed_hz;       /**< Speed-loop crossover. */
+	float i_max;             /**< Speed-PI q-current limit, A. */
+	float i_start;           /**< ALIGN and IF current, A. */
+	float t_align;           /**< ALIGN duration, s. */
+	float accel_start;       /**< IF ramp, rad/s^2. */
+	float w_handover;        /**< Switch to the observer, rad/s. */
+	float accel;             /**< RUN reference ramp, rad/s^2. */
+	float w_max;             /**< Largest target speed, rad/s. */
+};
+
+/** \brief Sequencer state, see struct foc_seq_cfg. */
+struct foc_seq {
+	struct foc_pi speed;
+	float ts, pp, i_max, i_start, t_align, accel_start, w_handover, accel, w_max;
+	enum foc_state state;
+	unsigned int faults; /**< Fault bits that caused FAULT. */
+	float dir;           /**< +1 or -1, fixed at start. */
+	float target;        /**< Requested speed, rad/s mechanical. */
+	float w_ref;         /**< Ramped speed reference, rad/s mechanical. */
+	float w_forced;      /**< Forced speed, rad/s mechanical. */
+	float t;             /**< Time in the current state, s. */
+	unsigned char run;   /**< Start requested and no stop since. */
+	struct foc_cmd cmd;  /**< Last command written. */
+};
+
+/**
+ * \brief Compute the speed-PI gains, clamp the settings; start in STOP.
+ *
+ * Negative or non-finite settings are replaced by 0, which keeps the motor
+ * from starting usefully but never yields non-finite commands.
+ */
+void foc_seq_init(struct foc_seq *s, const struct foc_seq_cfg *cfg);
+
+/**
+ * \brief Request a start towards \p w (rad/s mechanical, sign = direction).
+ *
+ * Ignored unless in STOP; NaN counts as 0 (positive direction). ALIGN
+ * begins at the first step that sees the controller in STOP.
+ */
+void foc_seq_start(struct foc_seq *s, float w);
+
+/** \brief Change the target speed; see struct foc_seq_cfg for the clamping. */
+void foc_seq_set_speed(struct foc_seq *s, float w);
+
+/** \brief Request a stop; also clears a FAULT. Takes effect at the next step. */
+FOC_INLINE void foc_seq_stop(struct foc_seq *s)
+{
+	s->run = 0U;
+}
+
+/**
+ * \brief Run one sequencer step on the latest status and write the command.
+ *
+ * \return The command, also kept in s->cmd; always finite.
+ */
+const struct foc_cmd *foc_seq_step(struct foc_seq *s, const struct foc_status *st);
+
 #ifdef __cplusplus
 }
 #endif
