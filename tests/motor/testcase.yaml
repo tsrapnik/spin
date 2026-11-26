@@ -1,0 +1,28 @@
+common:
+  tags:
+    - pmsm
+    - motor
+tests:
+  pmsm.motor:
+    platform_allow:
+      - native_sim
+    integration_platforms:
+      - native_sim
+  pmsm.motor.sanitize:
+    # ASan + UBSan, see tests/lib/foc/testcase.yaml.
+    platform_allow:
+      - native_sim/native/64
+    integration_platforms:
+      - native_sim/native/64
+    extra_configs:
+      - CONFIG_ASAN=y
+      - CONFIG_ASAN_RECOVER=n
+      - CONFIG_UBSAN=y
+  pmsm.motor.build:
+    # ARM warnings (float promotion, FPU thread options); the sim power stage stands in for
+    # the STM32 driver (M5).
+    build_only: true
+    platform_allow:
+      - nucleo_c542rc
+    integration_platforms:
+      - nucleo_c542rc

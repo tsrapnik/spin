@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: MIT
+
+menuconfig PMSM_MOTOR
+	bool "PMSM motor devices"
+	default y
+	depends on DT_HAS_PMSM_MOTOR_ENABLED
+	select PMSM_FOC
+	select PMSM_POWER_STAGE
+	help
+	  Motor devices (compatible "pmsm,motor"): sensorless FOC on a
+	  power stage, with a motor thread for startup and speed control.
+	  See include/pmsm/motor.h.
+
+if PMSM_MOTOR
+
+module = PMSM_MOTOR
+module-str = pmsm_motor
+source "subsys/logging/Kconfig.template.log_config"
+
+config PMSM_MOTOR_INIT_PRIORITY
+	int "Motor device init priority"
+	default 60
+	help
+	  Must be above PMSM_POWER_STAGE_INIT_PRIORITY (checked at build
+	  time).
+
+config PMSM_MOTOR_PERIOD_US
+	int "Motor thread period (us)"
+	default 1000
+	range 100 10000
+	help
+	  Period of the sequencer and speed loop. Must be a whole number of
+	  kernel ticks (checked at build time); native_sim's default of
+	  100 ticks/s needs CONFIG_SYS_CLOCK_TICKS_PER_SEC raised.
+
+config PMSM_MOTOR_THREAD_PRIORITY
+	int "Motor thread priority"
+	default 2
+	help
+	  Preemptive priority; keep it above the shell and other application
+	  threads so the speed loop keeps its period.
+
+config PMSM_MOTOR_THREAD_STACK_SIZE
+	int "Motor thread stack size"
+	default 1024
+
+endif # PMSM_MOTOR

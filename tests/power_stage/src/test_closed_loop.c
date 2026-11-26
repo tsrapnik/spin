@@ -3,8 +3,8 @@
  *
  * The whole drive through the power-stage API: foc_cycle in the per-cycle
  * callback, as the motor device will run it. The sequencer is stepped in
- * the callback too (every 1 ms), so the run stays deterministic; M4.2 moves
- * it to the motor thread.
+ * the callback too (every 1 ms), so the run stays deterministic. The motor
+ * device runs it in its thread instead (tests/motor).
  */
 
 #include <math.h>

@@ -23,5 +23,6 @@ config PMSM_PLANT
 	  not meant for targets.
 
 rsource "drivers/Kconfig"
+rsource "subsys/motor/Kconfig"
 
 endmenu

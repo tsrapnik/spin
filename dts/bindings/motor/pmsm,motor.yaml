@@ -1,0 +1,140 @@
+# SPDX-License-Identifier: MIT
+
+description: |
+  Sensorless FOC drive of one PMSM on a power stage (include/pmsm/motor.h).
+
+  The motor parameters are the controller's model of the motor; the gains
+  are computed from them at build time. Speeds are mechanical rpm, currents
+  are peak phase values.
+
+  Example (FIT1036 estimates, 24 V):
+
+    motor0: motor {
+      compatible = "pmsm,motor";
+      power-stage = <&power_stage>;
+      resistance-micro-ohms = <3600000>;
+      inductance-nano-henries = <1500000>;
+      flux-linkage-micro-webers = <11000>;
+      pole-pairs = <11>;
+      inertia-nano-kg-m2 = <6000>;
+      max-current-milliamps = <1400>;
+      start-current-milliamps = <1000>;
+      trip-current-milliamps = <3000>;
+      vbus-min-millivolts = <10000>;
+      vbus-max-millivolts = <30000>;
+      max-speed-rpm = <950>;
+    };
+
+compatible: "pmsm,motor"
+
+properties:
+  power-stage:
+    type: phandle
+    required: true
+    description: The power-stage device that drives this motor.
+
+  resistance-micro-ohms:
+    type: int
+    required: true
+    description: Phase resistance.
+
+  inductance-nano-henries:
+    type: int
+    required: true
+    description: Phase inductance (Ld = Lq).
+
+  flux-linkage-micro-webers:
+    type: int
+    required: true
+    description: Permanent-magnet flux linkage, peak per phase.
+
+  pole-pairs:
+    type: int
+    required: true
+
+  inertia-nano-kg-m2:
+    type: int
+    required: true
+    description: Rotor plus load inertia; sets the speed-loop gains.
+
+  max-current-milliamps:
+    type: int
+    required: true
+    description: Largest q current the speed loop commands.
+
+  start-current-milliamps:
+    type: int
+    required: true
+    description: Current during align and I/f startup.
+
+  trip-current-milliamps:
+    type: int
+    required: true
+    description: |
+      Software over-current trip, any phase. Must exceed max-current and
+      start-current; the controller also clamps its reference to it.
+
+  vbus-min-millivolts:
+    type: int
+    required: true
+    description: Under-voltage trip while the outputs are on.
+
+  vbus-max-millivolts:
+    type: int
+    required: true
+    description: Over-voltage trip while the outputs are on.
+
+  max-speed-rpm:
+    type: int
+    required: true
+    description: |
+      Largest target speed. At most the voltage-limited top speed,
+      vbus / (sqrt(3) * pole-pairs * flux) rad/s.
+
+  handover-speed-rpm:
+    type: int
+    default: 290
+    description: |
+      Switch from I/f to the observer; also the lowest running speed. Must
+      be well above the speed where the back-EMF equals R * start-current
+      (see docs/PLAN.md, insights M3.2).
+
+  align-time-ms:
+    type: int
+    default: 100
+    description: Duration of the align step before I/f.
+
+  start-acceleration-rpm-per-s:
+    type: int
+    default: 3000
+    description: I/f ramp of the forced speed.
+
+  acceleration-rpm-per-s:
+    type: int
+    default: 5000
+    description: Ramp of the speed reference in closed loop.
+
+  current-bandwidth-hz:
+    type: int
+    default: 500
+    description: Current-loop bandwidth (PI by pole cancellation).
+
+  observer-bandwidth-hz:
+    type: int
+    default: 2000
+    description: Observer bandwidth (double pole).
+
+  pll-bandwidth-hz:
+    type: int
+    default: 150
+    description: PLL natural frequency.
+
+  speed-bandwidth-hz:
+    type: int
+    default: 50
+    description: Speed-loop crossover.
+
+  emf-min-millivolts:
+    type: int
+    default: 100
+    description: The PLL gain falls off below this back-EMF estimate.

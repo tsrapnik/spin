@@ -58,7 +58,7 @@ lib/foc/                        # transforms.c (sincos, circle limit) svpwm.c pi
 subsys/motor/                   # motor.c (device, ISR glue, thread, faults), motor_shell.c
 drivers/power_stage/            # power_stage_sim.c, power_stage_stm32_tim.c
 dts/bindings/                   # vendor-prefixes.txt (pmsm); power-stage/pmsm,sim-power-stage.yaml,
-                                # st,stm32-tim-power-stage.yaml; pmsm,motor.yaml
+                                # st,stm32-tim-power-stage.yaml; motor/pmsm,motor.yaml
 tests/lib/foc/                  # unit tests
 tests/sim/                      # closed-loop scenarios on the plant (no devices)
 tests/power_stage/              # sim power-stage driver: API contract + closed loop through the API
@@ -114,9 +114,9 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 
 ### M4 Zephyr device
 - [x] M4.1 Power-stage API header + `pmsm,sim-power-stage` driver (wraps the plant)
-- [ ] M4.2 `pmsm,motor` binding + device, motor thread, cmd/status exchange
+- [x] M4.2 `pmsm,motor` binding + device, motor thread, cmd/status exchange; `tests/motor` (API, faults, offsets)
 - [ ] M4.3 Shell: `motor start|stop|speed <rpm>|status`
-- [ ] M4.4 `samples/motor_basic` on native_sim; `tests/motor`
+- [ ] M4.4 `samples/motor_basic` on native_sim; extend `tests/motor` (shell)
 
 ### M5 STM32 power stage
 - [ ] M5.1 TIM1 PWM, verify on scope without motor (frequency, dead-time, center alignment)
@@ -330,3 +330,28 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
   Closed loop through the API (`foc_cycle` in the callback, `foc_seq` every 20 cycles in it for determinism):
   standstill → RUN in < 0.5 s, 50 rad/s ± 5 %, BRK → FAULT with `FOC_FAULT_EXT`, stop clears it.
   Pitfall: 950 · 1e-3f ≠ 0.95f and 1 − 0.95f ≠ 0.05f in float; tests compare against `info->max_duty`.
+- 2026-11-26 (M4.2): `pmsm,motor` device (`subsys/motor/motor.c`, `include/pmsm/motor.h`, `CONFIG_PMSM_MOTOR`,
+  default y with a `pmsm,motor` node; selects `PMSM_FOC` + `PMSM_POWER_STAGE`). The API is plain functions on the
+  device (one implementation, no vtable). Speeds are mechanical rad/s (SI like the core); the binding takes rpm.
+  All gains and limits come from DT at build time, the timing (`ts`, `max_duty`, `duty_delay`) from
+  `power_stage_get_info()` at init. PLL/forced-speed limit = 2 · p · max speed. Currents, Vbus trip levels and
+  max speed are required properties (no safe default); BUILD_ASSERTs check trip > max/start current,
+  vbus-max > vbus-min, handover < max speed, init priority above the power stage's.
+- cmd/status exchange: each buffer pair has one writer, which fills `b[(n + 1) & 1]` and then `atomic_inc(n)`
+  (wraps, no signed overflow). The ISR reads cmd without a retry (the thread cannot preempt it); the thread
+  retries its status copy if n advanced by ≥ 2 (the second ISR write reuses the buffer being copied).
+  The ISR writes `foc_cycle_step`'s status straight into the inactive buffer (no copy). Single-core argument;
+  revisit for SMP.
+- Motor thread: `k_timer` + `k_timer_status_sync()`; when late it steps `foc_seq` once per elapsed period (ramps keep
+  their rate) and counts the misses in `motor_status.late`. The period must be whole kernel ticks (BUILD_ASSERT):
+  native_sim's 100 ticks/s would run the 1 kHz speed loop at 100 Hz. `tests/motor` sets 10000 ticks/s.
+- ISR glue: disable every off cycle (cheap, also resets the duty after a BRK); if `power_stage_enable()` fails
+  (BRK input still active) it raises `FOC_FAULT_EXT`, otherwise ALIGN would wind the current PIs up with the
+  bridge off. `motor_start()` calibrates the sense offsets every time (outputs are off in STOP), so drift is
+  removed per start; out-of-range offsets refuse the start (`-ERANGE`).
+- `foc_seq.faults` keeps its bits after STOP; `motor_status.faults` reports them only in FAULT (caught by the test).
+- `tests/motor` (`pmsm.motor`, `.sanitize`, `.build` on nucleo_c542rc with the sim power stage as a stand-in for
+  ARM warnings): start → RUN → 50 rad/s ±5 %, estimate within 1 rad/s of the plant, set_speed 80, reverse start,
+  direction fixed, stop → coasting with zero current, `-EBUSY` right after stop, restart, BRK pulse → FAULT/`-EIO`
+  → stop clears → restart, BRK held at start → FAULT, offsets calibrated / `-ERANGE`, NaN/Inf → `-EINVAL`;
+  `late == 0` throughout. native_sim runs in simulated time, so `k_msleep` waits are deterministic.

@@ -6,10 +6,11 @@ Textbook algorithms, float32, MCU-agnostic except for one power-stage driver.
 Status, decisions and milestones: [docs/PLAN.md](docs/PLAN.md) · hardware: [docs/HARDWARE.md](docs/HARDWARE.md)
 · backlog: [docs/FEATURES.md](docs/FEATURES.md). Parts marked *(planned)* are not implemented yet.
 
-API reference: Doxygen in the headers, today only the math core [include/pmsm/foc.h](include/pmsm/foc.h)
-(including the ISR/thread split of the drive: `foc_cycle`, `foc_seq`).
-The motor device API (`start`, `stop`, `set_speed`, `get_status`) and its devicetree binding come in M4,
-see [docs/PLAN.md](docs/PLAN.md).
+API reference: Doxygen in the headers: the math core [include/pmsm/foc.h](include/pmsm/foc.h)
+(including the ISR/thread split of the drive: `foc_cycle`, `foc_seq`), the motor device
+[include/pmsm/motor.h](include/pmsm/motor.h) (`motor_start`, `motor_stop`, `motor_set_speed`,
+`motor_get_status`; binding [dts/bindings/motor/pmsm,motor.yaml](dts/bindings/motor/pmsm,motor.yaml)) and the
+power-stage class [include/pmsm/power_stage.h](include/pmsm/power_stage.h).
 
 ## Control loop
 
@@ -192,7 +193,7 @@ the PLL from the forced angle.
 flowchart TB
   APP["application / shell"] -->|"start · stop · set_speed · get_status"| MOT
   subgraph PO["portable"]
-    MOT["motor device (planned)<br/>pmsm,motor · thread + ISR glue"] --> CORE["FOC math core<br/>include/pmsm/foc.h · lib/foc/<br/>plain C99, no Zephyr"]
+    MOT["motor device<br/>pmsm,motor · thread + ISR glue"] --> CORE["FOC math core<br/>include/pmsm/foc.h · lib/foc/<br/>plain C99, no Zephyr"]
   end
   MOT -->|"set_duty · sample callback"| PSD
   subgraph PM["per MCU"]

@@ -56,9 +56,12 @@ Layers (see the module layout and power-stage API in `docs/PLAN.md`):
    forced angle, angle select) and the 1 kHz startup/speed sequencer (`seq.c`), which exchange
    `foc_cmd`/`foc_status`. Sim harness for the whole drive: `tests/sim/src/drive.c`. The plant model
    (`include/pmsm/plant.h`, `lib/plant/`, `CONFIG_PMSM_PLANT`) is plain C too, double precision, sim only.
-2. **Motor subsystem** (planned, `subsys/motor/`) — `pmsm,motor` device: FOC in the ADC ISR (no kernel
-   calls), speed loop/state machine in a 1 kHz motor thread, single-writer `cmd`/`status` structs
-   exchanged via double buffer + atomic index.
+2. **Motor subsystem** (`include/pmsm/motor.h`, `subsys/motor/motor.c`, `CONFIG_PMSM_MOTOR`, binding
+   `dts/bindings/motor/pmsm,motor.yaml`) — `pmsm,motor` device: `foc_cycle_step` in the power-stage
+   callback (no kernel calls), `foc_seq_step` in a motor thread every `CONFIG_PMSM_MOTOR_PERIOD_US`
+   (must be whole kernel ticks: native_sim needs `CONFIG_SYS_CLOCK_TICKS_PER_SEC` raised). Single-writer
+   `cmd`/`status` double buffers switched by an atomic counter. Tests: `tests/motor` (timer-driven sim
+   power stage, simulated kernel time).
 3. **Power-stage driver class** (`include/pmsm/power_stage.h`, `drivers/power_stage/`,
    `CONFIG_PMSM_POWER_STAGE`) — the only per-MCU part: synchronised PWM + current/Vbus sampling, one
    callback per PWM cycle in ISR context, BRK reported in the sample flags. Deliberately not Zephyr's
