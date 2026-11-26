@@ -72,7 +72,7 @@
 
   <!-- signals -->
   <path class="sig" d="M720 80 H626" marker-end="url(#s)"/>
-  <text class="fg" x="676" y="72" text-anchor="middle">ω* (shell)</text>
+  <text class="fg" x="676" y="72" text-anchor="middle">ω*</text>
   <path class="sig" d="M600 168 V106" marker-end="url(#s)"/>
   <text class="fg" x="606" y="140">ω̂</text>
   <path class="sig" d="M579 72 H334" marker-end="url(#s)"/>
