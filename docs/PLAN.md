@@ -119,7 +119,7 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 - [ ] M5.5 ISR timing (DWT cycle counter / GPIO) < 50 % of PWM period at 20 kHz
 
 ### M6 Docs
-- [ ] M6.1 README + integration guide (binding, params, bring-up procedure)
+- [~] M6.1 README + integration guide (binding, params, bring-up procedure)
 
 ## Verification
 
@@ -204,3 +204,7 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
   scenario run on every platform. Keep `platform_allow` per scenario only.
 - M4.1 (sim power stage) will need the plant inside the module; move `tests/sim/plant/` then (it has
   no Zephyr dependencies, so only the path changes).
+- 2026-11-26: `README.md` documents the physics and control strategy, mostly as diagrams: P&ID
+  (`docs/img/pid.svg`), signal flow, startup states and layers (Mermaid), frames and PWM timing
+  (`docs/img/*.svg`, light/dark via `prefers-color-scheme`), plus the equations (amplitude-invariant
+  Clarke and the 3/2 in torque, motor model, gains, observer/PLL). Integration guide still to do.

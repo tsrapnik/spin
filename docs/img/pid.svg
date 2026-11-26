@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 400" width="780" height="400" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <!-- SPDX-License-Identifier: MIT -->
+  <title>Control P&amp;ID: speed cascade over current loop, sensorless</title>
+  <style>
+    .bg { fill: #ffffff; }
+    .fg { fill: #24292f; } .mut { fill: #57606a; }
+    .proc { stroke: #24292f; stroke-width: 4; fill: none; }
+    .box { stroke: #24292f; stroke-width: 1.5; fill: #f6f8fa; }
+    .inst { stroke: #0969da; stroke-width: 1.5; fill: #ffffff; } .instl { stroke: #0969da; stroke-width: 1; }
+    .tap { stroke: #24292f; stroke-width: 1.2; fill: none; }
+    .sig { stroke: #0969da; stroke-width: 1.4; fill: none; stroke-dasharray: 7 4; }
+        .trip { stroke: #cf222e; stroke-width: 1.6; fill: none; stroke-dasharray: 10 3 2 3; }
+    .tripf { stroke: #cf222e; stroke-width: 1.5; fill: #ffffff; } .tript { fill: #cf222e; }
+    .ah { fill: #0969da; } .aht { fill: #cf222e; } .ahp { fill: #24292f; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; }
+      .fg { fill: #e6edf3; } .mut { fill: #8b949e; }
+      .proc, .tap { stroke: #e6edf3; } .ahp { fill: #e6edf3; }
+      .box { stroke: #e6edf3; fill: #161b22; }
+      .inst { stroke: #4493f8; fill: #0d1117; } .instl { stroke: #4493f8; }
+      .sig { stroke: #4493f8; } .ah { fill: #4493f8; }
+      .trip { stroke: #ff7b72; } .tripf { stroke: #ff7b72; fill: #0d1117; } .tript, .aht { fill: #ff7b72; }
+    }
+  </style>
+  <defs>
+    <marker id="s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker>
+    <marker id="t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="aht" d="M0 0 L10 5 L0 10 z"/></marker>
+    <marker id="p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path class="ahp" d="M0 0 L10 5 L0 10 z"/></marker>
+  </defs>
+  <rect class="bg" width="780" height="400"/>
+
+  <!-- process: DC bus -> inverter -> 3 phases -> motor -> shaft -> load -->
+  <rect class="box" x="20" y="265" width="80" height="50" rx="4"/>
+  <text class="fg" x="60" y="287" text-anchor="middle">DC bus</text>
+  <text class="mut" x="60" y="303" text-anchor="middle" font-size="11">7–45 V</text>
+  <line class="proc" x1="100" y1="290" x2="248" y2="290" marker-end="url(#p)"/>
+  <rect class="box" x="250" y="260" width="120" height="60" rx="4"/>
+  <text class="fg" x="310" y="285" text-anchor="middle">3φ inverter</text>
+  <text class="mut" x="310" y="302" text-anchor="middle" font-size="11">TIM1, centre-aligned</text>
+  <line class="proc" x1="370" y1="290" x2="566" y2="290" marker-end="url(#p)"/>
+  <path class="tap" d="M500 282 l8 -16 M507 282 l8 -16 M514 282 l8 -16"/>
+  <text class="mut" x="526" y="276" font-size="11">3~</text>
+  <circle class="box" cx="600" cy="290" r="32"/>
+  <text class="fg" x="600" y="296" text-anchor="middle" font-size="18" font-weight="bold">M</text>
+  <text class="mut" x="600" y="340" text-anchor="middle" font-size="11">PMSM</text>
+  <line class="proc" x1="632" y1="290" x2="680" y2="290"/>
+  <rect class="box" x="680" y="270" width="80" height="40" rx="4"/>
+  <text class="fg" x="720" y="295" text-anchor="middle">Load</text>
+
+  <!-- process taps -->
+  <line class="tap" x1="175" y1="290" x2="175" y2="214"/>
+  <line class="tap" x1="440" y1="290" x2="440" y2="214"/>
+  <text class="mut" x="440" y="312" text-anchor="middle" font-size="11">3 low-side shunts</text>
+
+  <!-- ISA-5.1: circle = sensor on the power board, hexagon = firmware function; number = loop -->
+  <circle class="inst" cx="175" cy="190" r="24"/>
+  <text class="fg" x="175" y="185" text-anchor="middle">VT</text><text class="mut" x="175" y="204" text-anchor="middle" font-size="11">300</text>
+  <circle class="inst" cx="440" cy="190" r="24"/>
+  <text class="fg" x="440" y="185" text-anchor="middle">IT</text><text class="mut" x="440" y="204" text-anchor="middle" font-size="11">200</text>
+  <path class="inst" d="M574 190 L587 168 H613 L626 190 L613 212 H587 z"/>
+  <text class="fg" x="600" y="185" text-anchor="middle">ST</text><text class="mut" x="600" y="204" text-anchor="middle" font-size="11">100</text>
+  <text class="mut" x="630" y="176" font-size="11">no sensor:</text>
+  <text class="mut" x="630" y="190" font-size="11">observer + PLL</text>
+  <text class="mut" x="630" y="204" font-size="11">→ θ̂, ω̂</text>
+
+  <path class="inst" d="M284 80 L297 58 H323 L336 80 L323 102 H297 z"/>
+  <text class="fg" x="310" y="75" text-anchor="middle">IC</text><text class="mut" x="310" y="94" text-anchor="middle" font-size="11">200</text>
+  <text class="mut" x="310" y="40" text-anchor="middle" font-size="11">d/q current PI, 20 kHz ISR</text>
+  <path class="inst" d="M574 80 L587 58 H613 L626 80 L613 102 H587 z"/>
+  <text class="fg" x="600" y="75" text-anchor="middle">SIC</text><text class="mut" x="600" y="94" text-anchor="middle" font-size="11">100</text>
+  <text class="mut" x="600" y="40" text-anchor="middle" font-size="11">speed PI, 1 kHz thread</text>
+
+  <!-- signals -->
+  <path class="sig" d="M720 80 H626" marker-end="url(#s)"/>
+  <text class="fg" x="676" y="72" text-anchor="middle">ω* (shell)</text>
+  <path class="sig" d="M600 168 V106" marker-end="url(#s)"/>
+  <text class="fg" x="606" y="140">ω̂</text>
+  <path class="sig" d="M579 72 H334" marker-end="url(#s)"/>
+  <text class="fg" x="456" y="64" text-anchor="middle">i_q*  (i_d* = 0)</text>
+  <path class="sig" d="M464 190 H574" marker-end="url(#s)"/>
+  <text class="fg" x="519" y="183" text-anchor="middle">i_abc</text>
+  <path class="sig" d="M440 166 V90 H332" marker-end="url(#s)"/>
+  <text class="fg" x="388" y="104" text-anchor="middle">i_abc</text>
+  <path class="sig" d="M583 173 L560 140 H340 L328 99" marker-end="url(#s)"/>
+  <text class="fg" x="500" y="134" text-anchor="middle">θ̂</text>
+  <path class="sig" d="M175 166 V80 H284" marker-end="url(#s)"/>
+  <text class="fg" x="230" y="72" text-anchor="middle">V_bus</text>
+  <path class="sig" d="M310 104 V258" marker-end="url(#s)"/>
+  <text class="fg" x="318" y="220">duties</text>
+  <path class="sig" d="M330 258 V232 H520 V200 L577 198" marker-end="url(#s)"/>
+  <text class="fg" x="480" y="248" text-anchor="middle" font-size="11">applied v_αβ</text>
+
+  <!-- HW over-current trip -->
+  <path class="tripf" d="M255 175 L270 190 L255 205 L240 190 z"/>
+  <text class="tript" x="255" y="194" text-anchor="middle" font-size="11" font-weight="bold">I</text>
+  <path class="trip" d="M416 190 H270"/>
+  <path class="trip" d="M255 205 V258" marker-end="url(#t)"/>
+  <text class="tript" x="255" y="158" font-size="11" text-anchor="middle">OC trip</text>
+  <text class="tript" x="255" y="170" font-size="11" text-anchor="middle">→ BRK, PWM off</text>
+
+  <!-- legend -->
+  <line class="proc" x1="20" y1="346" x2="42" y2="346"/><text class="mut" x="48" y="350" font-size="11">power</text>
+  <path class="sig" d="M95 346 H117"/><text class="mut" x="123" y="350" font-size="11">signal</text>
+  <path class="trip" d="M172 346 H194"/><text class="mut" x="200" y="350" font-size="11">hardware trip</text>
+  <circle class="inst" cx="290" cy="346" r="7"/><text class="mut" x="302" y="350" font-size="11">sensor on the power board</text>
+  <path class="inst" d="M447 346 L451 339 H459 L463 346 L459 353 H451 z"/><text class="mut" x="470" y="350" font-size="11">firmware function in the MCU</text>
+  <path class="tripf" d="M640 339 L647 346 L640 353 L633 346 z"/><text class="mut" x="654" y="350" font-size="11">interlock</text>
+  <text class="mut" x="20" y="372" font-size="11">ISA-5.1 tags: 1st letter = variable (V voltage, I current, S speed), then T transmitter, I indicating, C controller.</text>
+  <text class="mut" x="20" y="388" font-size="11">Number = loop: 100 speed, 200 current, 300 bus voltage.</text>
+</svg>

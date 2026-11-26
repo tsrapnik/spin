@@ -11,6 +11,8 @@ X-NUCLEO-IHM16M1 + DFRobot FIT1036; CI runs on `native_sim`.
   with status markers, and an **insights log** at the end. Mark progress and append insights as you go.
 - `docs/FEATURES.md`: backlog. Anything not needed for v1 goes here, not into code.
 - `docs/HARDWARE.md`: BOM, board mods, pin map, motor parameters (many marked ⚠ unverified/estimate).
+- `README.md` + `docs/img/*.svg`: physics and control strategy, mostly diagrams. Update when an
+  algorithm, frame convention or timing changes; drop *(planned)* markers as parts land.
 
 ## Workspace and commands
 

@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 320" width="380" height="320" font-family="Helvetica, Arial, sans-serif" font-size="14">
+  <!-- SPDX-License-Identifier: MIT -->
+  <title>Reference frames: abc, alpha-beta, dq</title>
+  <style>
+    .fg { fill: #24292f; } .ln { stroke: #24292f; }
+    .abc { stroke: #8c959f; fill: none; stroke-dasharray: 5 4; } .abct { fill: #6e7781; }
+    .dq { stroke: #0969da; } .dqt { fill: #0969da; } .ah-dq { fill: #0969da; }
+    .ah { fill: #24292f; } .arc { stroke: #cf222e; fill: none; } .arct { fill: #cf222e; }
+    .bg { fill: #ffffff; }
+    @media (prefers-color-scheme: dark) {
+      .fg, .ah { fill: #e6edf3; } .ln { stroke: #e6edf3; }
+      .abc { stroke: #6e7681; } .abct { fill: #8b949e; }
+      .dq { stroke: #4493f8; } .dqt, .ah-dq { fill: #4493f8; }
+      .arc { stroke: #ff7b72; } .arct { fill: #ff7b72; }
+      .bg { fill: #0d1117; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah-dq" d="M0 0 L10 5 L0 10 z"/></marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path class="arct" d="M0 0 L10 5 L0 10 z"/></marker>
+  </defs>
+  <rect class="bg" width="380" height="320"/>
+  <!-- phase axes a (0), b (120), c (240) -->
+  <line class="abc" x1="180" y1="170" x2="120" y2="66"/>
+  <line class="abc" x1="180" y1="170" x2="120" y2="274"/>
+  <text class="abct" x="106" y="60">b</text>
+  <text class="abct" x="100" y="290">c</text>
+  <!-- alpha (= a) and beta -->
+  <line class="ln" stroke-width="1.5" x1="180" y1="170" x2="320" y2="170" marker-end="url(#a)"/>
+  <line class="ln" stroke-width="1.5" x1="180" y1="170" x2="180" y2="30" marker-end="url(#a)"/>
+  <text class="fg" x="326" y="175">α = a</text>
+  <text class="fg" x="188" y="32">β</text>
+  <!-- d at theta = 60 deg, q at 150 deg -->
+  <line class="dq" stroke-width="2.5" x1="180" y1="170" x2="245" y2="57" marker-end="url(#b)"/>
+  <line class="dq" stroke-width="2.5" x1="180" y1="170" x2="67" y2="105" marker-end="url(#b)"/>
+  <text class="dqt" x="250" y="50" font-weight="bold">d</text>
+  <text class="dqt" x="50" y="103" font-weight="bold">q</text>
+  <text class="dqt" x="226" y="110" font-size="12">ψ (rotor flux)</text>
+  <!-- theta arc and rotation -->
+  <path class="arc" stroke-width="1.5" d="M225 170 A45 45 0 0 0 202.5 131"/>
+  <text class="arct" x="232" y="146">θ</text>
+  <path class="arc" stroke-width="1.5" d="M295 74 A150 150 0 0 0 231 29" marker-end="url(#r)"/>
+  <text class="arct" x="282" y="46">ω = dθ/dt</text>
+  <text class="fg" x="20" y="312" font-size="12">electrical angle θ = p · mechanical angle; q leads d by 90°</text>
+</svg>
