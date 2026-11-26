@@ -56,7 +56,7 @@ subsys/motor/                   # motor.c (device, ISR glue, thread, faults), mo
 drivers/power_stage/            # power_stage_sim.c, power_stage_stm32_tim.c
 dts/bindings/                   # pmsm,motor.yaml, pmsm,sim-power-stage.yaml, st,stm32-tim-power-stage.yaml
 tests/lib/foc/                  # unit tests
-tests/sim/                      # plant model + closed-loop scenarios (pure C)
+tests/sim/                      # plant/ (pure-C plant model) + src/ closed-loop scenarios
 tests/motor/                    # device layer on sim power stage
 samples/motor_basic/            # shell sample; boards/nucleo_c542rc.overlay
 docs/PLAN.md  docs/FEATURES.md  docs/HARDWARE.md
@@ -96,7 +96,7 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 - [x] M1.5 ztest vectors for all of the above
 
 ### M2 Plant + closed-loop sim (ideal angle)
-- [ ] M2.1 Discrete PMSM model (dq: Rs, Ls, flux, pole pairs, J, B, load torque) + ideal inverter (duty → voltage) with the duty delay
+- [x] M2.1 Discrete PMSM model (dq: Rs, Ls, flux, pole pairs, J, B, load torque) + ideal inverter (duty → voltage) with the duty delay
 - [ ] M2.2 FOC current loop + speed loop with true angle; CI tests: current step response, speed step
 
 ### M3 Sensorless
@@ -186,3 +186,21 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
   `ASAN_RECOVER=n` + `-fno-sanitize-recover=all` (checked with an injected signed overflow).
   checkpatch must run from `zephyr/` to pick up `.checkpatch.conf` (it ignores the SPDX tag
   placement). The first run found only an `ARRAY_SIZE` hint and formatting in two test files.
+- 2026-11-26 (M2.1): Plant in `tests/sim/plant/` (`plant.h`/`plant.c`, no Zephyr includes): surface
+  PMSM in the rotor dq frame + ideal inverter, double precision, RK4 with `substeps` per PWM period
+  (default 8 in tests). The inverter voltage is held constant in the **stationary** frame over the
+  period (cycle average), so the dq voltage rotates within a step as on the real motor. Call order
+  per cycle: `plant_sample()` → controller → `plant_step(duty)`. `duty_delay` (0..2, default 1; 1 is what the hardware should have, 2 covers a missed latch and robustness tests)
+  is a FIFO: the duty passed now is applied `duty_delay` steps later; `p.applied` / `p.va` hold
+  the duty and αβ voltage of the last step (what the M3 observer must use). `t_load` is an active
+  torque (it reverses a stalled rotor); passive loads come with M3.4 if needed. State fields are
+  public, so scenarios set initial speed/angle, load and Vbus steps directly.
+- Tests (`pmsm.sim`, + `.sanitize`; host only, no target build): locked-rotor RL step vs. the analytic
+  response (1e-7 A), duty delay 0..2 and FIFO order, common mode / clamping, short-circuit steady
+  state at constant speed (checks the cross-coupling and back-EMF signs, 1e-6 rel.), torque sign and
+  Kt via impulse = J·Δω, viscous decay and constant-load deceleration. Comparisons use the applied
+  `p.va`, not the requested voltage: float duty rounding alone is ~4e-7 A.
+- Twister merges `common: platform_allow` with the per-scenario list, so a common list makes every
+  scenario run on every platform. Keep `platform_allow` per scenario only.
+- M4.1 (sim power stage) will need the plant inside the module; move `tests/sim/plant/` then (it has
+  no Zephyr dependencies, so only the path changes).

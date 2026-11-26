@@ -1,0 +1,21 @@
+common:
+  tags:
+    - pmsm
+    - sim
+# Host only: the plant runs in double precision and has no target use.
+tests:
+  pmsm.sim:
+    platform_allow:
+      - native_sim
+    integration_platforms:
+      - native_sim
+  pmsm.sim.sanitize:
+    # ASan + UBSan, see tests/lib/foc/testcase.yaml.
+    platform_allow:
+      - native_sim/native/64
+    integration_platforms:
+      - native_sim/native/64
+    extra_configs:
+      - CONFIG_ASAN=y
+      - CONFIG_ASAN_RECOVER=n
+      - CONFIG_UBSAN=y
