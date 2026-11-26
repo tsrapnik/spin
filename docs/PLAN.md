@@ -377,3 +377,12 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
   the start error messages (`-EALREADY`, `-EBUSY`, `-EIO`, `-ERANGE`), fault display (`0x8 break`) and cleared
   after stop, and rejection of missing/garbled/fractional/out-of-range speeds, non-motor devices (`ps`) and
   extra arguments. The suite's setup waits for the dummy backend to become active (the shell thread initialises it).
+- Sample: the simulated motor has 1 mNm·s/rad viscous friction (≈ 0.29 A at 500 rpm), otherwise iq settles to 0 and
+  the shell shows nothing to control. Sample-only `sim show|load <mNm>|friction <mNm>|vbus <mV>`
+  (`src/sim_shell.c`, built with `CONFIG_PMSM_POWER_STAGE_SIM`) reads and sets the plant under
+  `power_stage_sim_lock()`. Checked: 100 mNm load step at 500 rpm dips to 477 rpm, recovers in < 1 s at 0.84 A;
+  `sim vbus 8000` → FAULT under-voltage.
+- With that friction the drive is voltage-limited at 844 rpm (|v_dq| = 12.47 V = Vbus/√3 · (2·0.95 − 1):
+  EMF 10.7 V + Rs·iq 1.75 V), below max-speed-rpm = 950; nothing reports it (FEATURES). The speed PI does not wind up:
+  950 → 600 rpm settles without undershoot.
+

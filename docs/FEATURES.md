@@ -9,6 +9,9 @@ Candidates that would improve the library. Move an item into `docs/PLAN.md` when
 - Smooth angle-error blend from forced angle to observer (v1: hard switch)
 - Lower handover speed: reduce i_d before the switch, or compensate the Rs error in I/f (v1 switches at 30 rad/s
   because ΔR·i_d reads as EMF, see PLAN insights M3.2)
+- Report voltage saturation in `motor_status` (and `motor status`): at the voltage limit the speed silently
+  settles below the target (sample at 24 V with 1 mNm·s/rad friction tops out at 844 rpm); SPMSM field weakening
+  to go beyond it
 - Active damping of the align/I/f swing (q current from the EMF in the forced frame), if the hardware needs it
 - Minimum running speed below the handover speed (the observer tracks down to ≈ 5 rad/s once locked)
 - Runtime parameter override (API + shell `motor params`)

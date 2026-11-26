@@ -9,6 +9,8 @@
 		flux-linkage-micro-webers = <11000>;
 		pole-pairs = <11>;
 		inertia-nano-kg-m2 = <6000>;
+		/* 1 mNm per rad/s: about 0.3 A at 500 rpm, 0.55 A at 950 rpm. */
+		viscous-friction-nano-nm-s = <1000000>;
 	};
 
 	motor0: motor {

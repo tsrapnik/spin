@@ -25,11 +25,24 @@ name is optional and defaults to the first motor):
    uart:~$ motor status
    motor: run
      speed   700.0 rpm (ref 700.0, target 700.0)
-     i_dq    0.000 0.000 A
-     v_dq    0.00 8.87 V
+     i_dq    0.000 0.404 A
+     v_dq    -0.49 10.32 V
      vbus    24.00 V, emf 8.87 V
      late    0
    uart:~$ motor stop
 
 ``motor start`` calibrates the current-sense offsets, then runs align, I/f
 and closed loop; ``motor stop`` lets the motor coast and clears a fault.
+
+On native_sim, ``sim`` acts on the simulated motor (1 mNm per rad/s viscous
+friction from the overlay):
+
+.. code-block:: none
+
+   uart:~$ sim load 100       # 100 mNm load step: iq rises, speed dips and recovers
+   uart:~$ sim show           # true speed, current, torque and loads
+   uart:~$ sim friction 20    # Coulomb friction, mNm
+   uart:~$ sim vbus 8000      # bus to 8 V: under-voltage fault ("motor stop" clears it)
+
+At 24 V the bridge runs out of voltage at about 840 rpm with this friction:
+higher targets settle there (``v_dq`` at about 12.5 V).
