@@ -1,0 +1,198 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 580" width="800" height="580" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <!-- SPDX-License-Identifier: MIT -->
+  <title>Signal flow: speed loop in the motor thread, current loop and observer in the ADC ISR</title>
+  <style>
+    .bg { fill: #ffffff; } .fg { fill: #24292f; } .mut { fill: #57606a; } .est { fill: #9a6700; }
+    .ln { stroke: #24292f; stroke-width: 1.4; fill: none; }
+    .lne { stroke: #9a6700; stroke-width: 1.4; fill: none; }
+    .mdl { stroke-dasharray: 2 3; }
+    .box { stroke: #24292f; stroke-width: 1.3; fill: #ffffff; }
+    .boxe { stroke: #9a6700; stroke-width: 1.3; fill: #ffffff; }
+    .plan { stroke-dasharray: 5 3; }
+    .thr { fill: #fbf5ff; stroke: #8250df; stroke-width: 1; }
+    .isr { fill: #f1f8ff; stroke: #0969da; stroke-width: 1; }
+    .thrt { fill: #8250df; } .isrt { fill: #0969da; }
+    .ah { fill: #24292f; } .ahe { fill: #9a6700; } .jn { fill: #24292f; } .jne { fill: #9a6700; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #0d1117; } .fg { fill: #e6edf3; } .mut { fill: #8b949e; } .est { fill: #d29922; }
+      .ln { stroke: #e6edf3; } .lne { stroke: #d29922; }
+      .box { stroke: #e6edf3; fill: #0d1117; } .boxe { stroke: #d29922; fill: #0d1117; }
+      .thr { fill: #1a1530; stroke: #a371f7; } .isr { fill: #0c1a2e; stroke: #4493f8; }
+      .thrt { fill: #a371f7; } .isrt { fill: #4493f8; }
+      .ah, .jn { fill: #e6edf3; } .ahe, .jne { fill: #d29922; }
+    }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ah" d="M0 0 L10 5 L0 10 z"/></marker>
+    <marker id="e" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path class="ahe" d="M0 0 L10 5 L0 10 z"/></marker>
+  </defs>
+  <rect class="bg" width="800" height="580"/>
+
+  <!-- context bands -->
+  <rect class="thr" x="10" y="10" width="645" height="96" rx="6"/>
+  <text class="thrt" x="20" y="27" font-size="12" font-weight="bold">motor thread · 1 kHz</text>
+  <rect class="isr" x="10" y="118" width="645" height="410" rx="6"/>
+  <text class="isrt" x="20" y="135" font-size="12" font-weight="bold">ADC ISR · every PWM period (20 kHz)</text>
+
+  <!-- ===== motor thread: speed loop ===== -->
+  <text class="fg" x="22" y="63">ω*</text>
+  <line class="ln" x1="42" y1="58" x2="62" y2="58" marker-end="url(#a)"/>
+  <rect class="box plan" x="62" y="40" width="62" height="36" rx="4"/>
+  <text class="fg" x="93" y="63" text-anchor="middle">ramp</text>
+  <line class="ln" x1="124" y1="58" x2="138" y2="58" marker-end="url(#a)"/>
+  <circle class="box" cx="150" cy="58" r="12"/>
+  <text class="fg" x="150" y="63" text-anchor="middle">Σ</text>
+  <text class="fg" x="131" y="50" font-size="11">+</text>
+  <text class="fg" x="137" y="88" font-size="12">−</text>
+  <line class="lne" x1="150" y1="98" x2="150" y2="72" marker-end="url(#e)"/>
+  <text class="est" x="160" y="99" font-size="11">ω̂ (status)</text>
+  <line class="ln" x1="162" y1="58" x2="180" y2="58" marker-end="url(#a)"/>
+  <rect class="box" x="180" y="40" width="84" height="36" rx="4"/>
+  <text class="fg" x="222" y="56" text-anchor="middle">speed PI</text>
+  <text class="mut" x="222" y="70" text-anchor="middle" font-size="10">preload at IF→RUN</text>
+
+  <!-- i_q* and i_d* refs into the ISR (cmd) -->
+  <path class="ln" d="M264 58 H276 V230 H302" marker-end="url(#a)"/>
+  <text class="fg" x="280" y="52" font-size="12">i_q*</text>
+  <line class="ln" x1="290" y1="64" x2="290" y2="157" marker-end="url(#a)"/>
+  <text class="fg" x="296" y="72" font-size="12">i_d* = 0</text>
+  <text class="mut" x="296" y="86" font-size="10">(ALIGN: I_align)</text>
+  <text class="thrt" x="222" y="116" font-size="10">cmd ↓</text>
+
+  <!-- startup state machine -->
+  <rect class="box plan" x="440" y="34" width="200" height="44" rx="4"/>
+  <text class="fg" x="540" y="53" text-anchor="middle">startup state machine</text>
+  <text class="mut" x="540" y="68" text-anchor="middle" font-size="10">STOP · ALIGN · IF · RUN · FAULT</text>
+  <text class="mut" x="540" y="96" text-anchor="middle" font-size="10">cmd: state, refs, ω_f   ·   status: ω̂, i, faults</text>
+
+  <!-- ===== ISR: current loop ===== -->
+  <circle class="box" cx="290" cy="170" r="12"/>
+  <text class="fg" x="290" y="175" text-anchor="middle">Σ</text>
+  <circle class="box" cx="314" cy="230" r="12"/>
+  <text class="fg" x="314" y="235" text-anchor="middle">Σ</text>
+  <text class="fg" x="276" y="198" font-size="12">−</text>
+  <text class="fg" x="319" y="257" font-size="12">−</text>
+
+  <line class="ln" x1="302" y1="170" x2="346" y2="170" marker-end="url(#a)"/>
+  <text class="mut" x="318" y="163" font-size="10">e_d</text>
+  <line class="ln" x1="326" y1="230" x2="346" y2="230" marker-end="url(#a)"/>
+  <text class="mut" x="328" y="223" font-size="10">e_q</text>
+
+  <rect class="box" x="346" y="152" width="80" height="36" rx="4"/>
+  <text class="fg" x="386" y="168" text-anchor="middle">d PI</text>
+  <text class="mut" x="386" y="182" text-anchor="middle" font-size="10">|v_d| ≤ v_max</text>
+  <rect class="box" x="346" y="212" width="80" height="36" rx="4"/>
+  <text class="fg" x="386" y="228" text-anchor="middle">q PI</text>
+  <text class="mut" x="386" y="242" text-anchor="middle" font-size="10">rest of circle</text>
+
+  <!-- v_d sets the q limit (d first) -->
+  <line class="ln" x1="426" y1="170" x2="452" y2="170" marker-end="url(#a)"/>
+  <text class="fg" x="430" y="163" font-size="11">v_d</text>
+  <circle class="jn" cx="438" cy="170" r="2.5"/>
+  <path class="ln mdl" d="M438 170 V200 H408 V210" marker-end="url(#a)"/>
+  <line class="ln" x1="426" y1="230" x2="452" y2="230" marker-end="url(#a)"/>
+  <text class="fg" x="430" y="223" font-size="11">v_q</text>
+  <text class="mut" x="346" y="270" font-size="10">d first: |v_q| ≤ √(v_max² − v_d²)</text>
+  <text class="mut" x="346" y="283" font-size="10">v_max = (2·d_max − 1)·V_bus / √3</text>
+
+  <rect class="box" x="452" y="150" width="88" height="100" rx="4"/>
+  <text class="fg" x="496" y="195" text-anchor="middle">Park⁻¹</text>
+  <text class="mut" x="496" y="211" text-anchor="middle" font-size="10">at θ + ω·1.5 T_s</text>
+
+  <line class="ln" x1="540" y1="200" x2="566" y2="200" marker-end="url(#a)"/>
+  <text class="mut" x="542" y="193" font-size="10">v_αβ</text>
+  <rect class="box" x="566" y="182" width="56" height="36" rx="4"/>
+  <text class="fg" x="594" y="198" text-anchor="middle">SVPWM</text>
+  <text class="mut" x="594" y="212" text-anchor="middle" font-size="10">÷ V_bus</text>
+
+  <line class="ln" x1="622" y1="200" x2="670" y2="200" marker-end="url(#a)"/>
+  <text class="fg" x="636" y="192" font-size="11">d_abc</text>
+  <circle class="jn" cx="632" cy="200" r="2.5"/>
+
+  <!-- ===== power stage ===== -->
+  <rect class="box" x="670" y="150" width="120" height="220" rx="4"/>
+  <text class="fg" x="730" y="172" text-anchor="middle" font-weight="bold">power stage</text>
+  <text class="mut" x="730" y="196" text-anchor="middle" font-size="10">TIM1, centre-aligned</text>
+  <text class="mut" x="730" y="211" text-anchor="middle" font-size="10">duty latched at peak</text>
+  <text class="mut" x="730" y="226" text-anchor="middle" font-size="10">→ 1 period delay</text>
+  <text class="mut" x="730" y="256" text-anchor="middle" font-size="10">inverter → PMSM</text>
+  <text class="mut" x="730" y="286" text-anchor="middle" font-size="10">3 shunts, ADC1</text>
+  <text class="mut" x="730" y="301" text-anchor="middle" font-size="10">sampled at peak</text>
+
+  <!-- measurement: i_abc -> Clarke -> Park -> Σ -->
+  <path class="ln" d="M670 330 H637 a5 5 0 0 0 -10 0 H620" marker-end="url(#a)"/>
+  <text class="fg" x="638" y="350" font-size="10">i_abc,</text>
+  <text class="fg" x="638" y="362" font-size="10">V_bus</text>
+  <rect class="box" x="560" y="312" width="60" height="36" rx="4"/>
+  <text class="fg" x="590" y="335" text-anchor="middle">Clarke</text>
+  <path class="ln" d="M560 330 H535 a5 5 0 0 0 -10 0 H515" marker-end="url(#a)"/>
+  <text class="mut" x="538" y="322" font-size="10">i_αβ</text>
+  <rect class="box" x="455" y="312" width="60" height="36" rx="4"/>
+  <text class="fg" x="485" y="335" text-anchor="middle">Park</text>
+  <path class="ln" d="M455 330 H290 V182" marker-end="url(#a)"/>
+  <circle class="jn" cx="314" cy="330" r="2.5"/>
+  <line class="ln" x1="314" y1="330" x2="314" y2="242" marker-end="url(#a)"/>
+  <text class="fg" x="320" y="322" font-size="11">i_q</text>
+  <text class="fg" x="270" y="322" font-size="11">i_d</text>
+  <!-- hop of the i_q* line over the i_d feedback -->
+  <path class="ln" d="M284 230 a6 6 0 0 1 12 0"/>
+
+  <!-- ===== ISR: angle and speed estimate ===== -->
+  <!-- applied voltage from the duty history -->
+  <path class="ln mdl" d="M632 200 V325 a5 5 0 0 1 0 10 V420" marker-end="url(#a)"/>
+  <rect class="boxe" x="570" y="420" width="80" height="40" rx="4"/>
+  <text class="fg" x="610" y="437" text-anchor="middle">z⁻¹ · V_bus</text>
+  <text class="mut" x="610" y="452" text-anchor="middle" font-size="10">applied v_αβ</text>
+  <line class="lne mdl" x1="570" y1="440" x2="532" y2="440" marker-end="url(#e)"/>
+
+  <path class="ln" d="M590 348 V395 H500 V418" marker-end="url(#a)"/>
+  <text class="mut" x="596" y="378" font-size="10">i_αβ</text>
+
+  <rect class="boxe" x="432" y="420" width="100" height="40" rx="4"/>
+  <text class="fg" x="482" y="437" text-anchor="middle">observer</text>
+  <text class="mut" x="482" y="452" text-anchor="middle" font-size="10">Luenberger</text>
+  <line class="lne" x1="432" y1="440" x2="402" y2="440" marker-end="url(#e)"/>
+  <text class="est" x="408" y="434" font-size="11">ê_αβ</text>
+
+  <rect class="boxe" x="302" y="420" width="100" height="40" rx="4"/>
+  <text class="fg" x="352" y="437" text-anchor="middle">PLL</text>
+  <text class="mut" x="352" y="452" text-anchor="middle" font-size="10">+ frequency aid</text>
+  <path class="lne mdl" d="M390 420 V405 H450 V418" marker-end="url(#e)"/>
+  <text class="est" x="415" y="402" font-size="11">ω̂</text>
+  <line class="lne" x1="302" y1="440" x2="252" y2="440" marker-end="url(#e)"/>
+  <text class="est" x="262" y="434" font-size="11">θ̂, ω̂</text>
+  <line class="lne" x1="352" y1="460" x2="352" y2="484"/>
+  <text class="est" x="358" y="484" font-size="11">ω̂ → status (speed loop)</text>
+
+  <rect class="boxe plan" x="172" y="420" width="80" height="40" rx="4"/>
+  <text class="fg" x="212" y="437" text-anchor="middle">select</text>
+  <text class="mut" x="212" y="452" text-anchor="middle" font-size="10">by state</text>
+
+  <rect class="boxe plan" x="30" y="420" width="110" height="40" rx="4"/>
+  <text class="fg" x="85" y="437" text-anchor="middle">forced angle</text>
+  <text class="mut" x="85" y="452" text-anchor="middle" font-size="10">θ_f = ∫ ω_f dt (I/f)</text>
+  <line class="lne" x1="140" y1="440" x2="170" y2="440" marker-end="url(#e)"/>
+  <line class="lne" x1="85" y1="396" x2="85" y2="418" marker-end="url(#e)"/>
+  <text class="est" x="91" y="402" font-size="11">ω_f (cmd)</text>
+  <path class="lne mdl" d="M85 460 V506 H330 V462" marker-end="url(#e)"/>
+  <text class="est" x="150" y="501" font-size="11">preload θ̂, ω̂ at IF→RUN</text>
+
+  <!-- θ (and ω) to Park and Park⁻¹ -->
+  <path class="lne" d="M212 420 V380 H530 V252" marker-end="url(#e)"/>
+  <circle class="jne" cx="485" cy="380" r="2.5"/>
+  <line class="lne" x1="485" y1="380" x2="485" y2="350" marker-end="url(#e)"/>
+  <text class="est" x="218" y="400" font-size="11">θ, ω</text>
+  <text class="est" x="491" y="372" font-size="11">θ</text>
+  <text class="est" x="536" y="270" font-size="11">θ, ω</text>
+
+  <!-- legend -->
+  <line class="ln" x1="20" y1="552" x2="48" y2="552"/>
+  <text class="mut" x="54" y="556" font-size="11">current loop</text>
+  <line class="lne" x1="140" y1="552" x2="168" y2="552"/>
+  <text class="mut" x="174" y="556" font-size="11">angle / speed</text>
+  <line class="ln mdl" x1="270" y1="552" x2="298" y2="552"/>
+  <text class="mut" x="304" y="556" font-size="11">limit, model input, preload</text>
+  <rect class="box plan" x="470" y="544" width="28" height="16" rx="3"/>
+  <text class="mut" x="504" y="556" font-size="11">planned (M3/M4)</text>
+  <text class="mut" x="610" y="556" font-size="11">cmd / status: double buffer</text>
+</svg>

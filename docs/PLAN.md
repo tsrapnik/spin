@@ -205,8 +205,8 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
 - M4.1 (sim power stage) will need the plant inside the module; move `tests/sim/plant/` then (it has
   no Zephyr dependencies, so only the path changes).
 - 2026-11-26: `README.md` documents the physics and control strategy, mostly as diagrams: P&ID
-  (`docs/img/pid.svg`), signal flow, startup states and layers (Mermaid), frames and PWM timing
-  (`docs/img/*.svg`, light/dark via `prefers-color-scheme`), plus the equations (amplitude-invariant
+  (`docs/img/pid.svg`), signal flow, frames and PWM timing (`docs/img/*.svg`, light/dark via
+  `prefers-color-scheme`), startup states and layers (Mermaid), plus the equations (amplitude-invariant
   Clarke and the 3/2 in torque, motor model, gains, observer/PLL). Integration guide still to do.
 - 2026-11-26 (M2.2): `foc_current_step()` in `lib/foc/foc.c`: Clarke → Park (θ) → d PI (±vmax) → q PI
   (±`foc_q_limit(vd, vmax)`) → inverse Park at θ + ω·t_adv → SVPWM. Takes the angle and speed as inputs, so

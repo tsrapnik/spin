@@ -21,36 +21,13 @@ position sensor: an observer estimates angle and speed from the measured current
 
 ## Signal flow
 
-```mermaid
-flowchart LR
-  subgraph T["motor thread · 1 kHz"]
-    W(["ω*"]) --> R[ramp] --> E1(("Σ")) --> SPI[speed PI]
-  end
-  subgraph I["ADC ISR · every PWM cycle (20 kHz)"]
-    ID(["i_d* = 0"]) --> E2(("Σ")) --> DPI[d PI]
-    E3(("Σ")) --> QPI[q PI]
-    DPI -->|v_d| LIM[circle limit<br/>d first]
-    QPI -->|v_q| LIM
-    LIM --> IP["Park⁻¹ at θ + ω·1.5 T_s"] --> SV[SVPWM] -->|d_abc| PS[[power stage]]
-    PS -->|"i_abc, V_bus"| CL[Clarke] -->|i_αβ| P[Park]
-    P -->|"−i_d"| E2
-    P -->|"−i_q"| E3
-    CL --> OBS["observer"] -->|ê_αβ| PLL["PLL + frequency aid"] --> SEL{angle<br/>select}
-    SV -.->|"applied duty (history)"| OBS
-    PLL -.->|ω̂| OBS
-    FA["forced angle<br/>(I/f startup)"] --> SEL
-    SEL -->|θ| P
-    SEL -->|θ| IP
-  end
-  SPI -->|i_q*| E3
-  PLL -->|"−ω̂"| E1
-```
+![Signal flow](docs/img/signal-flow.svg)
 
 ## Startup *(planned, M3)*
 
 ```mermaid
 stateDiagram-v2
-  direction LR
+  direction TB
   [*] --> STOP
   STOP --> ALIGN: start
   ALIGN --> IF: rotor aligned
