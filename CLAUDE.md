@@ -74,7 +74,9 @@ soft-float).
 - **Non-finite policy**: functions that keep state, set limits or produce duties must always return
   finite, in-range values (NaN → neutral value, ±Inf saturates; `foc_sanitizef`). Linear transforms
   propagate NaN on purpose so faults stay visible; fault checks must be NaN-aware
-  (`!(x >= min && x <= max)` or `isfinite()`). Add cases to `tests/lib/foc/src/test_nonfinite.c`.
+  (`!(x >= min && x <= max)` or `isfinite()`). Add cases to `tests/lib/foc/src/test_nonfinite.c`:
+  every new API function goes through its `bad[]` set (NaN, ±Inf, ±FLT_MAX, overflow-when-squared,
+  sincos range, subnormals), each argument alone and all at once.
 - Gains are derived from motor parameters (`foc_gains_*`); DT parameters are integers with unit
   suffixes, converted to float once at init.
 

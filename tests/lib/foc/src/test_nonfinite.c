@@ -6,12 +6,17 @@
  */
 
 #include <float.h>
+#include <limits.h>
 #include <math.h>
 #include <zephyr/ztest.h>
 #include <pmsm/foc.h>
 
-static const float bad[] = {NAN,   -NAN,   INFINITY, -INFINITY, FLT_MAX, -FLT_MAX,
-			    1e30f, -1e30f, 3001.0f,  -3001.0f,  FLT_MIN, -0.0f};
+/* NaN, Inf, overflow when squared or scaled, outside the sincos range, and
+ * underflow: smallest normal and subnormal numbers.
+ */
+static const float bad[] = {NAN,   -NAN,   INFINITY,     -INFINITY,    FLT_MAX, -FLT_MAX,
+			    1e30f, -1e30f, 3001.0f,      -3001.0f,     FLT_MIN, -FLT_MIN,
+			    -0.0f, 1e20f,  FLT_TRUE_MIN, -FLT_TRUE_MIN};
 
 #define N_BAD ARRAY_SIZE(bad)
 
@@ -258,6 +263,182 @@ ZTEST(foc_nonfinite, test_current_step)
 						     in_range(d.b, 0.05f, 0.95f) &&
 						     in_range(d.c, 0.05f, 0.95f),
 					     "x %e case %zu", (double)x, k);
+				zassert_true(isfinite(c.v.d) && isfinite(c.v.q));
+				zassert_true(isfinite(c.d.integ) && isfinite(c.q.integ));
+			}
+		}
+	}
+}
+
+/*
+ * A bad speed only affects the angle advance: NaN counts as 0, so the
+ * duties equal those for omega = 0. Also with t_adv = 0, where Inf * 0 is
+ * NaN.
+ */
+ZTEST(foc_nonfinite, test_current_bad_speed_is_zero_advance)
+{
+	const struct foc_pi_gains g = {.kp = 5.0f, .ki = 1e4f};
+	const struct foc_abc i = {.a = 0.1f, .b = 0.0f, .c = -0.1f};
+	const struct foc_dq ref = {.d = 0.0f, .q = 1.0f};
+	const float t_adv[] = {75e-6f, 0.0f};
+
+	for (size_t t = 0; t < ARRAY_SIZE(t_adv); t++) {
+		struct foc_current c0, c1;
+		const float w_bad[] = {NAN, -NAN};
+
+		for (size_t k = 0; k < ARRAY_SIZE(w_bad); k++) {
+			foc_current_init(&c0, g, 50e-6f, 0.95f, t_adv[t]);
+			foc_current_init(&c1, g, 50e-6f, 0.95f, t_adv[t]);
+
+			struct foc_abc d0 = foc_current_step(&c0, i, 24.0f, 0.5f, 0.0f, ref);
+			struct foc_abc d1 = foc_current_step(&c1, i, 24.0f, 0.5f, w_bad[k], ref);
+
+			zassert_true(d0.a == d1.a && d0.b == d1.b && d0.c == d1.c,
+				     "t_adv %e: %f %f %f vs %f %f %f", (double)t_adv[t],
+				     (double)d0.a, (double)d0.b, (double)d0.c, (double)d1.a,
+				     (double)d1.b, (double)d1.c);
+		}
+
+		/* +-Inf speed with t_adv = 0: no advance at all. */
+		if (t_adv[t] == 0.0f) {
+			foc_current_init(&c0, g, 50e-6f, 0.95f, 0.0f);
+			foc_current_init(&c1, g, 50e-6f, 0.95f, 0.0f);
+
+			struct foc_abc d0 = foc_current_step(&c0, i, 24.0f, 0.5f, 0.0f, ref);
+			struct foc_abc d1 = foc_current_step(&c1, i, 24.0f, 0.5f, INFINITY, ref);
+
+			zassert_true(d0.a == d1.a && d0.b == d1.b && d0.c == d1.c);
+		}
+	}
+}
+
+/*
+ * The linear transforms propagate NaN and Inf on purpose (header comment):
+ * a broken measurement must stay visible to the fault checks.
+ */
+ZTEST(foc_nonfinite, test_linear_transforms_propagate)
+{
+	const float nonfinite[] = {NAN, INFINITY, -INFINITY};
+	struct foc_sincos sc = foc_sincos(0.3f);
+
+	for (size_t i = 0; i < ARRAY_SIZE(nonfinite); i++) {
+		float x = nonfinite[i];
+		struct foc_ab ab = foc_clarke((struct foc_abc){.a = x, .b = 0.1f, .c = 0.2f});
+		struct foc_abc abc = foc_inv_clarke((struct foc_ab){.alpha = x, .beta = 0.1f});
+		struct foc_dq dq = foc_park((struct foc_ab){.alpha = x, .beta = 0.1f}, sc);
+		struct foc_ab iab = foc_inv_park((struct foc_dq){.d = x, .q = 0.1f}, sc);
+		struct foc_ab vab =
+			foc_duty_to_ab((struct foc_abc){.a = x, .b = 0.5f, .c = 0.5f}, 24.0f);
+		struct foc_ab vbus =
+			foc_duty_to_ab((struct foc_abc){.a = 0.6f, .b = 0.5f, .c = 0.4f}, x);
+
+		zassert_false(isfinite(ab.alpha), "clarke %e", (double)x);
+		zassert_false(isfinite(abc.a), "inv_clarke %e", (double)x);
+		zassert_false(isfinite(dq.d) && isfinite(dq.q), "park %e", (double)x);
+		zassert_false(isfinite(iab.alpha) && isfinite(iab.beta), "inv_park %e", (double)x);
+		zassert_false(isfinite(vab.alpha), "duty_to_ab duty %e", (double)x);
+		zassert_false(isfinite(vbus.alpha), "duty_to_ab vbus %e", (double)x);
+	}
+	/* Finite overflow becomes Inf, also visible. */
+	zassert_false(isfinite(foc_clarke((struct foc_abc){.a = FLT_MAX, .b = -FLT_MAX}).alpha));
+}
+
+ZTEST(foc_nonfinite, test_clampf_inf)
+{
+	zassert_equal(foc_clampf(INFINITY, -1.0f, 1.0f), 1.0f);
+	zassert_equal(foc_clampf(-INFINITY, -1.0f, 1.0f), -1.0f);
+	zassert_equal(foc_clampf(FLT_TRUE_MIN, 0.0f, 1.0f), FLT_TRUE_MIN);
+}
+
+/* Kt is a plain product; foc_gains_speed() rejects whatever it yields. */
+ZTEST(foc_nonfinite, test_torque_constant_into_gains)
+{
+	const unsigned int pp[] = {0U, 1U, 11U, UINT_MAX};
+
+	zassert_true(isnan(foc_torque_constant(NAN, 11)));
+	for (size_t i = 0; i < N_BAD; i++) {
+		for (size_t k = 0; k < ARRAY_SIZE(pp); k++) {
+			struct foc_pi_gains g =
+				foc_gains_speed(6e-6f, foc_torque_constant(bad[i], pp[k]), 10.0f);
+
+			zassert_true(in_range(g.kp, 0.0f, FLT_MAX) && in_range(g.ki, 0.0f, FLT_MAX),
+				     "psi %e pp %u", (double)bad[i], pp[k]);
+		}
+	}
+}
+
+/* Extreme gains, errors and finite limits: no overflow escapes. */
+ZTEST(foc_nonfinite, test_pi_extreme)
+{
+	const float gains[] = {0.0f, 1.0f, 1e20f, FLT_MAX};
+	const float lims[] = {0.0f, 1.0f, 1e30f, FLT_MAX};
+	struct foc_pi pi;
+
+	for (size_t a = 0; a < ARRAY_SIZE(gains); a++) {
+		for (size_t b = 0; b < ARRAY_SIZE(gains); b++) {
+			for (size_t l = 0; l < ARRAY_SIZE(lims); l++) {
+				float lim = lims[l];
+
+				foc_pi_init(&pi,
+					    (struct foc_pi_gains){.kp = gains[a], .ki = gains[b]},
+					    1.0f);
+				for (size_t i = 0; i < N_BAD; i++) {
+					float u = foc_pi_step(&pi, bad[i], -lim, lim);
+
+					zassert_true(in_range(u, -lim, lim),
+						     "kp %e ki %e lim %e err %e", (double)gains[a],
+						     (double)gains[b], (double)lim, (double)bad[i]);
+					zassert_true(in_range(pi.integ, -lim, lim));
+				}
+			}
+		}
+	}
+}
+
+ZTEST(foc_nonfinite, test_current_init)
+{
+	struct foc_current c;
+
+	for (size_t i = 0; i < N_BAD; i++) {
+		foc_current_init(&c, (struct foc_pi_gains){.kp = bad[i], .ki = bad[i]}, bad[i],
+				 bad[i], bad[i]);
+		zassert_true(in_range(c.max_duty, 0.5f, 1.0f), "%e", (double)bad[i]);
+		zassert_true(in_range(c.t_adv, 0.0f, FLT_MAX));
+		zassert_true(in_range(c.d.kp, 0.0f, FLT_MAX) && in_range(c.d.ki_ts, 0.0f, FLT_MAX));
+
+		struct foc_abc d = foc_current_step(&c, (struct foc_abc){.a = 1.0f}, 24.0f, 0.5f,
+						    100.0f, (struct foc_dq){.q = 1.0f});
+
+		zassert_true(in_range(d.a, 0.0f, 1.0f) && in_range(d.b, 0.0f, 1.0f) &&
+			     in_range(d.c, 0.0f, 1.0f));
+	}
+	foc_current_init(&c, (struct foc_pi_gains){0}, 1e-4f, INFINITY, INFINITY);
+	zassert_equal(c.max_duty, 1.0f);
+	zassert_equal(c.t_adv, 0.0f);
+}
+
+/* Every input bad at once, with extreme gains: duties and state stay finite. */
+ZTEST(foc_nonfinite, test_current_step_all_bad)
+{
+	const float gains[] = {1.0f, FLT_MAX};
+	struct foc_current c;
+
+	for (size_t gi = 0; gi < ARRAY_SIZE(gains); gi++) {
+		for (size_t i = 0; i < N_BAD; i++) {
+			float x = bad[i];
+
+			foc_current_init(&c,
+					 (struct foc_pi_gains){.kp = gains[gi], .ki = gains[gi]},
+					 50e-6f, 0.95f, 75e-6f);
+			for (size_t j = 0; j < N_BAD; j++) {
+				float y = bad[j];
+				struct foc_abc d = foc_current_step(&c, (struct foc_abc){x, y, x},
+								    y, x, y, (struct foc_dq){x, y});
+
+				zassert_true(in_range(d.a, 0.05f, 0.95f) &&
+						     in_range(d.b, 0.05f, 0.95f) &&
+						     in_range(d.c, 0.05f, 0.95f),
+					     "x %e y %e", (double)x, (double)y);
 				zassert_true(isfinite(c.v.d) && isfinite(c.v.q));
 				zassert_true(isfinite(c.d.integ) && isfinite(c.q.integ));
 			}

@@ -24,8 +24,13 @@ struct foc_abc foc_current_step(struct foc_current *c, struct foc_abc i_abc, flo
 	float vd = foc_pi_step(&c->d, ref.d - i.d, -vmax, vmax);
 	float qlim = foc_q_limit(vd, vmax);
 	float vq = foc_pi_step(&c->q, ref.q - i.q, -qlim, qlim);
-	/* Non-finite theta or omega: foc_sincos() treats the sum as 0. */
-	struct foc_sincos sc_v = foc_sincos(theta + omega * c->t_adv);
+	/*
+	 * NaN advance (NaN omega, or Inf * 0) -> 0, so a bad speed only drops
+	 * the advance. More than half a turn per PWM period is meaningless.
+	 */
+	float adv = foc_sanitizef(omega * c->t_adv, FOC_PI_F);
+	/* Non-finite theta: foc_sincos() treats the sum as 0. */
+	struct foc_sincos sc_v = foc_sincos(theta + adv);
 
 	c->i = i;
 	c->v = (struct foc_dq){.d = vd, .q = vq};

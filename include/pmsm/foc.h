@@ -17,9 +17,12 @@
  * Non-finite values (NaN, +-Inf) and overflow:
  * - Functions that keep state, set limits or produce duties never return
  *   NaN or Inf: foc_wrap_pi(), foc_sincos(), foc_limit_circle(),
- *   foc_q_limit(), foc_svpwm_vmax(), foc_svpwm(), foc_pi_step() and the
- *   gain functions. Inputs that are NaN map to the neutral value (0, or
+ *   foc_q_limit(), foc_svpwm_vmax(), foc_svpwm(), foc_pi_init(),
+ *   foc_pi_step(), the gain functions, foc_current_init() and
+ *   foc_current_step(). Inputs that are NaN map to the neutral value (0, or
  *   zero voltage), +-Inf saturates. See each function.
+ * - foc_torque_constant() is a plain product and propagates NaN;
+ *   foc_gains_speed() rejects a non-finite or non-positive Kt.
  * - The linear transforms (Clarke, Park, their inverses, foc_duty_to_ab())
  *   propagate NaN and Inf on purpose. A NaN there comes from a broken
  *   measurement, and replacing it with 0 would hide the fault (a current
@@ -335,6 +338,7 @@ struct foc_pi_gains foc_gains_speed(float j, float kt, float bw_hz);
  *
  * \param psi Permanent-magnet flux linkage in Wb (peak, per phase).
  * \param pole_pairs Number of pole pairs.
+ * \return Kt in Nm/A (peak phase current); NaN or Inf if \p psi is.
  */
 FOC_INLINE float foc_torque_constant(float psi, unsigned int pole_pairs)
 {
@@ -392,12 +396,14 @@ FOC_INLINE void foc_current_reset(struct foc_current *c)
  *
  * Always returns duties in [1 - max_duty, max_duty]. A NaN current makes
  * the PIs hold (the per-cycle fault check must catch it, see the header
- * comment); a NaN angle or speed counts as 0; a NaN or too low \p vbus
- * gives zero voltage.
+ * comment); a NaN or too low \p vbus gives zero voltage. A NaN speed
+ * counts as 0 (no advance); the advance omega * t_adv is clamped to
+ * +-pi. \p theta is expected wrapped to [-pi, pi]: beyond
+ * #FOC_SINCOS_MAX_ARG, or NaN, it counts as 0 (foc_sincos()).
  *
  * \param i_abc Measured phase currents, A.
  * \param vbus Measured DC-bus voltage, V.
- * \param theta Electrical angle of the d axis at the sample, rad.
+ * \param theta Electrical angle of the d axis at the sample, rad, wrapped.
  * \param omega Electrical speed, rad/s (for the angle advance).
  * \param ref Current reference, A.
  * \return Duties for the next PWM period.

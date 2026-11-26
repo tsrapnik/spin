@@ -225,3 +225,10 @@ SVPWM (min/max zero-sequence injection) → `set_duty` → fault checks.
   the response is a poor detector of the delay. M3 observer tests must check the delay directly.
 - `foc_current_step` on nucleo_c542rc `-Os`: 79 instructions plus calls to `foc_sincos` (2×),
   `foc_pi_step` (2×) and `foc_svpwm`: about 300 instructions per cycle, a few % of the 20 kHz budget.
+- 2026-11-26 non-finite audit of every `foc.h` function. Bug: a NaN speed in `foc_current_step()`
+  made the inverse Park use angle 0 instead of θ (the doc said "speed counts as 0"); Inf·0 with
+  t_adv = 0 did the same. Fix: the advance ω·t_adv goes through `foc_sanitizef(…, π)`. Gaps closed:
+  subnormals and 1e20 (overflows when squared) in `bad[]`; NaN/Inf propagation asserted for the
+  linear transforms; `foc_torque_constant` → `foc_gains_speed`; PI with FLT_MAX gains and limits;
+  `foc_current_init` with bad gains/ts/max_duty/t_adv; `foc_current_step` with all inputs bad at once.
+  Known, documented: θ beyond `FOC_SINCOS_MAX_ARG` counts as 0, so callers must pass a wrapped angle.
