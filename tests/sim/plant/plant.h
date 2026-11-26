@@ -9,7 +9,7 @@
  *
  *   L did/dt = vd - Rs id + we L iq
  *   L diq/dt = vq - Rs iq - we L id - we psi
- *   J dwm/dt = Te - B wm - t_load,   Te = 1.5 p psi iq
+ *   J dwm/dt = Te - B wm - t_fric sgn(wm) - t_load,   Te = 1.5 p psi iq
  *   dtheta_e/dt = we = p wm
  *
  * Inverter: v_x = (d_x - mean(d)) * vbus, held constant in the stationary
@@ -49,6 +49,9 @@ extern "C" {
  */
 #define PLANT_DUTY_DELAY_MAX 2U
 
+/** \brief Speed over which the Coulomb friction sign is smoothed, rad/s. */
+#define PLANT_FRIC_W_EPS 0.5
+
 /** \brief Plant and inverter parameters. */
 struct plant_params {
 	float rs;                /**< Phase resistance, ohm. */
@@ -75,8 +78,14 @@ struct plant {
 	unsigned int substeps;
 
 	/* Inputs. */
-	double t_load; /**< External load torque, Nm; positive opposes positive speed. */
-	double vbus;   /**< DC-bus voltage, V. */
+	double t_load; /**< Active load torque, Nm; positive opposes positive speed. */
+	/**
+	 * Coulomb friction, Nm: a passive load that always opposes the motion.
+	 * The sign is smoothed by tanh(wm / #PLANT_FRIC_W_EPS), so at rest it
+	 * acts as a stiff viscous term instead of a true stiction.
+	 */
+	double t_fric;
+	double vbus; /**< DC-bus voltage, V. */
 
 	/* State. */
 	double id, iq;    /**< Rotor-frame currents, A. */
@@ -118,6 +127,15 @@ struct plant_sample plant_sample(const struct plant *p);
  * Duties are clamped to [0, 1].
  */
 void plant_step(struct plant *p, struct foc_abc duty);
+
+/**
+ * \brief Advance one PWM period with the inverter off (all switches open).
+ *
+ * The currents are 0 and the pending duties are dropped. Valid while the
+ * line-to-line back-EMF peak stays below the bus voltage, so the body diodes
+ * do not conduct (below the voltage-limited top speed).
+ */
+void plant_coast(struct plant *p);
 
 /** \brief Electromagnetic torque at the current instant, Nm. */
 double plant_torque(const struct plant *p);
